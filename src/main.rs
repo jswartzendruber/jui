@@ -4,6 +4,7 @@ mod texture;
 use quad::Quad;
 use std::io::Write;
 use std::iter;
+use wgpu::{util::DeviceExt, BindGroup, Buffer};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -12,29 +13,74 @@ use winit::{
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Instance {
+    transform: [f32; 2],
+    scale: [f32; 2],
+}
+
+impl Instance {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Instance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct RectUniforms {
+    size: [f32; 2],
+    origin: [f32; 2],
+    background_color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Uniforms {
+    viewport_size: [f32; 2],
+}
+
+impl Uniforms {
+    fn new(x: f32, y: f32) -> Self {
+        Self {
+            viewport_size: [x, y],
+        }
+    }
+
+    fn update(&mut self, x: f32, y: f32) {
+        self.viewport_size = [x, y];
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 2],
-    tex_coords: [f32; 2],
 }
 
 impl Vertex {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
+            attributes: &[wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            }],
         }
     }
 }
@@ -96,8 +142,14 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     quad: Quad,
-    diffuse_texture: texture::Texture,
-    diffuse_bind_group: wgpu::BindGroup,
+    rectangle_uniforms: RectUniforms,
+    rectangle_uniforms_buffer: Buffer,
+    rectangle_uniforms_bind_group: BindGroup,
+    uniforms: Uniforms,
+    uniforms_buffer: Buffer,
+    uniforms_bind_group: BindGroup,
+    instances: Vec<Instance>,
+    instance_buffer: Buffer,
     window: Window,
 }
 
@@ -163,46 +215,87 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let diffuse_bytes = include_bytes!("../happy-tree.png");
-        let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
+        let rectangle_uniforms = RectUniforms {
+            size: [1.0, 1.0],
+            origin: [0.0, 0.0],
+            background_color: [1.0, 0.0, 0.0, 1.0],
+        };
 
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
+        let rectangle_uniforms_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("rectangle_uniforms buffer"),
+                contents: bytemuck::cast_slice(&[rectangle_uniforms]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
+        let rectangle_uniforms_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("rectangle_uniforms_bind_group_layout"),
+            });
+
+        let rectangle_uniforms_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &rectangle_uniforms_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: rectangle_uniforms_buffer.as_entire_binding(),
+            }],
+            label: Some("uniforms_bind_group"),
+        });
+
+        let instances = vec![Instance {
+            transform: [-200.0, -200.0],
+            scale: [100.0, 100.0],
+        },Instance {
+            transform: [0.0, 0.0],
+            scale: [50.0, 50.0],
+        }];
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instances),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let size = window.inner_size();
+        let uniforms = Uniforms::new(size.width as f32, size.height as f32);
+
+        let uniforms_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniforms buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let uniforms_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("uniforms_bind_group_layout"),
+            });
+
+        let uniforms_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniforms_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniforms_buffer.as_entire_binding(),
+            }],
+            label: Some("uniforms_bind_group"),
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -213,7 +306,10 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[
+                    &rectangle_uniforms_bind_group_layout,
+                    &uniforms_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -223,7 +319,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
+                buffers: &[Vertex::desc(), Instance::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -271,14 +367,22 @@ impl State {
             size,
             render_pipeline,
             quad,
-            diffuse_texture,
-            diffuse_bind_group,
+            uniforms,
+            uniforms_buffer,
+            uniforms_bind_group,
+            rectangle_uniforms,
+            rectangle_uniforms_buffer,
+            rectangle_uniforms_bind_group,
+            instances,
+            instance_buffer,
             window,
         }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
+            self.uniforms
+                .update(new_size.width as f32, new_size.height as f32);
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
@@ -286,7 +390,18 @@ impl State {
         }
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        self.queue.write_buffer(
+            &self.rectangle_uniforms_buffer,
+            0,
+            bytemuck::cast_slice(&[self.rectangle_uniforms]),
+        );
+        self.queue.write_buffer(
+            &self.uniforms_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        );
+    }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -322,10 +437,13 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.rectangle_uniforms_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.uniforms_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.quad.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.quad.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.quad.num_indices, 0, 0..1);
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.quad.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.quad.num_indices, 0, 0..self.instances.len() as u32);
         }
 
         self.queue.submit(iter::once(encoder.finish()));
@@ -349,21 +467,20 @@ pub async fn run() {
                     event: WindowEvent::CloseRequested,
                     window_id: _,
                 } => {
-                    log::debug!("Closing window.");
+                    log::info!("Closing window.");
                     elwt.exit();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::Resized(size),
                     window_id: _,
                 } => {
-                    log::debug!("Resizing window.");
+                    log::info!("Resizing window.");
                     state.resize(size);
                 }
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,
                     window_id: _,
                 } => {
-                    log::debug!("Redrawing window.");
                     state.update();
                     match state.render() {
                         Ok(_) => {}
