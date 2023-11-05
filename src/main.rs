@@ -14,8 +14,8 @@ use winit::{
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Instance {
-    transform: [f32; 2],
-    scale: [f32; 2],
+    position: [f32; 2],
+    size: [f32; 2],
 }
 
 impl Instance {
@@ -252,13 +252,16 @@ impl State {
             label: Some("uniforms_bind_group"),
         });
 
-        let instances = vec![Instance {
-            transform: [-200.0, -200.0],
-            scale: [100.0, 100.0],
-        },Instance {
-            transform: [0.0, 0.0],
-            scale: [50.0, 50.0],
-        }];
+        let instances = vec![
+            // Instance {
+            //     position: [-200.0, -200.0],
+            //     size: [100.0, 100.0],
+            // },
+            Instance {
+                position: [100.0, 100.0],
+                size: [400.0, 400.0],
+            },
+        ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
