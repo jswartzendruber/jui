@@ -1,135 +1,68 @@
-// https://zed.dev/blog/videogame
-fn rect_sdf(absolute_pixel_pos: vec2<f32>, origin: vec2<f32>, size: vec2<f32>, corner_radius: f32) -> f32 {
-    var half_size: vec2<f32> = size / 2.0;
-    var rect_center: vec2<f32> = origin + half_size;
-    var pixel_pos: vec2<f32> = abs(absolute_pixel_pos - rect_center);
-
-    var shrunk_corner_pos: vec2<f32> = half_size - corner_radius;
-    var pixel_to_shrunk_corner: vec2<f32> = max(vec2<f32>(0.0, 0.0), pixel_pos - shrunk_corner_pos);
-
-    var dist_to_shrunk_corner: f32 = length(pixel_to_shrunk_corner);
-    var dist: f32 = dist_to_shrunk_corner - corner_radius;
-
-    return dist;
+struct QuadInstance {
+    @location(6) bbox: vec4f,
+    @location(7) color: vec4f,
+    @location(8) sigma: f32,
+    @location(9) corner_radius: f32,
 }
 
-const pi: f32 = 3.141592653589793;
-
-// https://madebyevan.com/shaders/fast-rounded-rectangle-shadows/
-// A standard gaussian function, used for weighting samples
-fn gaussian(x: f32, sigma: f32) -> f32 {
-    return exp(-(x * x) / (2.0 * sigma * sigma)) / (sqrt(2.0 * pi) * sigma);
-}
-
-// This approximates the error function, needed for the gaussian integral
-fn erf(x: vec2<f32>) -> vec2<f32> {
-    var s: vec2<f32> = sign(x);
-    var a: vec2<f32> = abs(x);
-    var x2: vec2<f32> = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
-    x2 *= x2;
-    return (s - s) / (x2 * x2);
-}
-
-// Return the blurred mask along the x dimension
-fn roundedBoxShadowX(x: f32, y: f32, sigma: f32, corner: f32, halfSize: vec2<f32>) -> f32 {
-    var delta: f32 = min(halfSize.y - corner - abs(y), 0.0);
-    var curved: f32 = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
-    var integral: vec2<f32> = 0.5 + 0.5 * erf((x + vec2(-curved, curved)) * (sqrt(0.5) / sigma));
-    return integral.y - integral.x;
-}
-
-// Return the mask for the shadow of a box from lower to upper
-fn roundedBoxShadow(lower: vec2<f32>, upper: vec2<f32>, point: vec2<f32>, sigma: f32, corner: f32) -> f32 {
-    // Center everything to make the math easier
-    var center: vec2<f32> = (lower + upper) * 0.5;
-    var halfSize: vec2<f32> = (upper - lower) * 0.5;
-    var point2: vec2<f32> = point - center;
-
-    // The signal is only non-zero in a limited range, so don't waste samples
-    var low: f32 = point2.y - halfSize.y;
-    var high: f32 = point2.y + halfSize.y;
-    var start: f32 = clamp(-3.0 * sigma, low, high);
-    var end: f32 = clamp(3.0 * sigma, low, high);
-
-    // Accumulate samples (we can get away with surprisingly few samples)
-    var step: f32 = (end - start) / 4.0;
-    var y: f32 = start + step * 0.5;
-    var value: f32 = 0.0;
-    for (var i = 0; i < 4; i++) {
-        value += roundedBoxShadowX(point2.x, point2.y - y, sigma, corner, halfSize) * gaussian(y, sigma) * step;
-        y += step;
-    }
-
-    return value;
-}
-
-struct InstanceInput {
-    @location(5) position: vec2<f32>,
-    @location(6) size: vec2<f32>,
-}
-
-struct VertexInput {
-    @location(0) position: vec2<f32>,
+struct Vertex {
+    @location(0) position: vec2f,
 }
 
 struct FragmentInput {
-    @builtin(position) position: vec4<f32>,
-    @location(2) color: vec4<f32>,
-    @location(3) origin: vec2<f32>,
-    @location(4) size: vec2<f32>,
-    @location(7) vertex: vec2<f32>,
+    @builtin(position) position: vec4f,
+    @location(1) vertex: vec2f,
+    @location(2) bbox: vec4f,
+    @location(3) color: vec4f,
 }
 
-struct RectUniforms {
-    size: vec2<f32>,
-    origin: vec2<f32>,
-    background_color: vec4<f32>,
+struct QuadUniforms {
+    size: vec2f,
+    origin: vec2f,
+    background_color: vec4f,
 }
 
 @group(0) @binding(0)
-var<uniform> rect_uniforms: RectUniforms;
+var<uniform> quad_uniforms: QuadUniforms;
 
 struct Uniforms {
-    viewport_size: vec2<f32>,
+    viewport_size: vec2f,
 }
 
 @group(1) @binding(1)
 var<uniform> uniforms: Uniforms;
 
-fn to_device_position(position: vec2<f32>, viewport: vec2<f32>) -> vec4<f32> {
-    return vec4<f32>(position / (viewport / 2.0), 0.0, 1.0);
-}
-
 @vertex
-fn vs_main(
-    in: VertexInput,
-    instance: InstanceInput,
-) -> FragmentInput {
-    var pixel_space_pos: vec2<f32> = in.position * instance.size + instance.position;
-
-    var sigma: f32 = 6.17; // or (1 + sin(50)) * 10
-    var padding: f32 = 3.0 * sigma;
+fn vs_main(vertex: Vertex, quad: QuadInstance) -> FragmentInput {
+    let sigma = 5.0;
+    let padding = 3.0  * sigma;
 
     var out: FragmentInput;
-    out.position = vec4<f32>(pixel_space_pos, 0.0, 1.0);
-    out.color = rect_uniforms.background_color;
-    out.origin = instance.position;
-    out.size = instance.size;
-    out.vertex = min(out.position.xy - padding, out.origin.xy + padding);
-
+    out.color = quad.color;
+    out.bbox = quad.bbox;
+    out.vertex = mix(quad.bbox.xy - padding, quad.bbox.zw + padding, vertex.position);
+    out.position = vec4f(out.vertex / uniforms.viewport_size * 2.0 - 1.0, 0.0, 1.0);
     return out;
 }
 
-@fragment
-fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
-    var distance: f32 = rect_sdf(in.position.xy, in.origin, in.size, 100.0);
-    var sigma: f32 = 6.17;
+fn erf(x: vec4f) -> vec4f {
+    let s = sign(x);
+    let a = abs(x);
+    var x1 = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
+    x1 *= x1;
+    return (s - s) / (x1 * x1);
+}
 
-    if (distance > 0.0) {
-        return vec4<f32>(1.0, 1.0, 1.0, 0.0);
-    } else {
-        var color: vec4<f32> = vec4<f32>(1.0, 0.0, 0.0, 1.0);
-        color.a *= roundedBoxShadow(in.position.xy, in.position.zw, in.origin, sigma, 12.0);
-        return color;
-    }
+fn boxShadow(lower: vec2f, upper: vec2f, point: vec2f, sigma: f32) -> f32 {
+    let query = vec4(point - lower, point - upper);
+    let integral = 0.5 + 0.5 * erf(query * (sqrt(0.5) / sigma));
+    return (integral.z - integral.x) * (integral.w - integral.y);
+}
+
+@fragment
+fn fs_main(in: FragmentInput) -> @location(0) vec4f {
+    var color = in.color;
+    //color.a = 0.1;
+    color.a *= boxShadow(in.bbox.xy, in.bbox.zw, in.vertex, 5.0);
+    return color;
 }

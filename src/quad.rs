@@ -14,24 +14,24 @@ B---D
 */
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: [-0.5, 0.5],
+        position: [0.0, 0.0],
         // tex_coords: [0.0, 0.0],
     }, // A
     Vertex {
-        position: [-0.5, -0.5],
+        position: [1.0, 0.0],
         // tex_coords: [0.0, 1.0],
     }, // B
     Vertex {
-        position: [0.5, -0.5],
+        position: [0.0, 1.0],
         // tex_coords: [1.0, 1.0],
     }, // C
     Vertex {
-        position: [0.5, 0.5],
+        position: [1.0, 1.0],
         // tex_coords: [1.0, 0.0],
     }, // D
 ];
 
-const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
+const INDICES: &[u16] = &[1, 2, 0, 1, 3, 2];
 
 pub struct Quad {
     pub vertex_buffer: Buffer,

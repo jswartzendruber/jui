@@ -14,8 +14,10 @@ use winit::{
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Instance {
-    position: [f32; 2],
-    size: [f32; 2],
+    bbox: [f32; 4],
+    color: [f32; 4],
+    sigma: f32,
+    corner_radius: f32,
 }
 
 impl Instance {
@@ -26,13 +28,23 @@ impl Instance {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x2,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x2,
+                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 9]>() as wgpu::BufferAddress,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }
@@ -157,8 +169,6 @@ impl State {
     async fn new(window: Window) -> Self {
         let size = window.inner_size();
 
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: Default::default(),
@@ -185,19 +195,15 @@ impl State {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::empty(),
-                    // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web we'll have to disable some.
                     limits: wgpu::Limits::default(),
                 },
-                None, // Trace path
+                None,
             )
             .await
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+
         let surface_format = surface_caps
             .formats
             .iter()
@@ -252,16 +258,12 @@ impl State {
             label: Some("uniforms_bind_group"),
         });
 
-        let instances = vec![
-            // Instance {
-            //     position: [-200.0, -200.0],
-            //     size: [100.0, 100.0],
-            // },
-            Instance {
-                position: [100.0, 100.0],
-                size: [400.0, 400.0],
-            },
-        ];
+        let instances = vec![Instance {
+            bbox: [300.0, 250.0, 350.0, 300.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+            sigma: 4.0,
+            corner_radius: 20.0,
+        }];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
@@ -330,8 +332,12 @@ impl State {
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent::OVER,
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -355,8 +361,6 @@ impl State {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
             multiview: None,
         });
 
