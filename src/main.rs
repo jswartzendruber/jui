@@ -1,12 +1,11 @@
 mod quad;
-mod texture;
 
-use etagere::{size2, AtlasAllocator};
+use etagere::*;
 use fontdue::Font;
-use image::{ImageBuffer, ImageOutputFormat, Rgb, RgbImage, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use quad::Quad;
+use std::io::Write;
 use std::iter;
-use std::{fs::File, io::Write};
 use wgpu::{util::DeviceExt, BindGroup, Buffer};
 use winit::{
     event::{Event, WindowEvent},
@@ -84,6 +83,7 @@ impl Uniforms {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 2],
+    tex_coords: [f32; 2],
 }
 
 impl Vertex {
@@ -91,11 +91,18 @@ impl Vertex {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x2,
-            }],
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
         }
     }
 }
@@ -128,12 +135,12 @@ fn init_env_logger() {
         .init();
 }
 
-fn generate_img_atlas(font: &Font) -> RgbImage {
+fn generate_img_atlas(font: &Font, font_size: f32) -> RgbaImage {
     let mut atlas = AtlasAllocator::new(size2(1024, 1024));
-    let mut img = RgbImage::new(1024, 1024);
+    let mut img = RgbaImage::from_pixel(1024, 1024, Rgba([0, 0, 0, 255]));
 
     for glyph in font.chars() {
-        let (metrics, bitmap) = font.rasterize_subpixel(*glyph.0, 24.0);
+        let (metrics, bitmap) = font.rasterize_subpixel(*glyph.0, font_size);
         let slot = atlas.allocate(size2(metrics.width as i32, metrics.height as i32));
 
         if let Some(rect) = slot {
@@ -147,8 +154,7 @@ fn generate_img_atlas(font: &Font) -> RgbImage {
                     let g = bitmap[x + 1 + y * metrics.width * 3];
                     let b = bitmap[x + 2 + y * metrics.width * 3];
 
-                    img.put_pixel(img_x as u32, img_y as u32, Rgb([r, g, b]));
-
+                    img.put_pixel(img_x as u32, img_y as u32, Rgba([r, g, b, 255]));
                     img_x += 1;
                 }
                 img_y += 1;
@@ -167,18 +173,18 @@ pub fn main() {
     };
     let font = fontdue::Font::from_bytes(font, settings).unwrap();
 
-    let atlas_img = generate_img_atlas(&font);
-    let mut atlas_png = File::create("font_atlas.png").unwrap();
-    atlas_img
-        .write_to(&mut atlas_png, ImageOutputFormat::Png)
-        .unwrap();
+    let atlas_img = generate_img_atlas(&font, 36.0);
+    // let mut atlas_png = File::create("font_atlas.png").unwrap();
+    // atlas_img
+    //     .write_to(&mut atlas_png, ImageOutputFormat::Png)
+    //     .unwrap();
 
-    pollster::block_on(app());
+    pollster::block_on(app(atlas_img));
 }
 
-async fn app() {
+async fn app(atlas_img: RgbaImage) {
     init_env_logger();
-    run().await;
+    run(atlas_img).await;
 }
 
 struct State {
@@ -198,10 +204,11 @@ struct State {
     instances: Vec<Instance>,
     instance_buffer: Buffer,
     window: Window,
+    atlas_bind_group: BindGroup,
 }
 
 impl State {
-    async fn new(window: Window) -> Self {
+    async fn new(window: Window, atlas_img: RgbaImage) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -256,6 +263,84 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        let atlas_dimensions = atlas_img.dimensions();
+        let atlas_size = wgpu::Extent3d {
+            width: atlas_dimensions.0,
+            height: atlas_dimensions.1,
+            depth_or_array_layers: 1,
+        };
+        let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: atlas_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("diffuse_texture"),
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &atlas_img,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * atlas_dimensions.0),
+                rows_per_image: Some(atlas_dimensions.1),
+            },
+            atlas_size,
+        );
+        let atlas_texture_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let atlas_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+        let atlas_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &atlas_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&atlas_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+            ],
+            label: Some("atlas_bind_group"),
+        });
+
         let rectangle_uniforms = RectUniforms {
             size: [1.0, 1.0],
             origin: [0.0, 0.0],
@@ -293,20 +378,12 @@ impl State {
             label: Some("uniforms_bind_group"),
         });
 
-        let instances = vec![
-            Instance {
-                bbox: [300.0, 250.0, 350.0, 300.0],
-                color: [0.0, 0.0, 1.0, 1.0],
-                sigma: 10.0,
-                corner_radius: 20.0,
-            },
-            // Instance {
-            //     bbox: [300.0, 250.0, 350.0, 300.0],
-            //     color: [0.0, 0.0, 1.0, 1.0],
-            //     sigma: 4.0,
-            //     corner_radius: 20.0,
-            // },
-        ];
+        let instances = vec![Instance {
+            bbox: [300.0, 250.0, 350.0, 300.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+            sigma: 10.0,
+            corner_radius: 20.0,
+        }];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
@@ -357,6 +434,7 @@ impl State {
                 bind_group_layouts: &[
                     &rectangle_uniforms_bind_group_layout,
                     &uniforms_bind_group_layout,
+                    &atlas_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -426,6 +504,7 @@ impl State {
             instances,
             instance_buffer,
             window,
+            atlas_bind_group,
         }
     }
 
@@ -489,6 +568,7 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.rectangle_uniforms_bind_group, &[]);
             render_pass.set_bind_group(1, &self.uniforms_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.atlas_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.quad.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass
@@ -503,12 +583,12 @@ impl State {
     }
 }
 
-pub async fn run() {
+pub async fn run(atlas_img: RgbaImage) {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut state = State::new(window).await;
+    let mut state = State::new(window, atlas_img).await;
 
     event_loop
         .run(move |event, elwt| {

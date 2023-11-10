@@ -3,31 +3,29 @@ use wgpu::{util::DeviceExt, Buffer, Device};
 
 /*
 
-0   3
-A---C
+C---D
 |\  |
 | \ |
 |  \|
-B---D
-1   2
+A---B
 
 */
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: [0.0, 0.0],
-        // tex_coords: [0.0, 0.0],
+        position: [-1.0, -1.0],
+        tex_coords: [0.0, 1.0],
     }, // A
     Vertex {
-        position: [1.0, 0.0],
-        // tex_coords: [0.0, 1.0],
+        position: [1.0, -1.0],
+        tex_coords: [1.0, 1.0],
     }, // B
     Vertex {
-        position: [0.0, 1.0],
-        // tex_coords: [1.0, 1.0],
+        position: [-1.0, 1.0],
+        tex_coords: [0.0, 0.0],
     }, // C
     Vertex {
         position: [1.0, 1.0],
-        // tex_coords: [1.0, 0.0],
+        tex_coords: [1.0, 0.0],
     }, // D
 ];
 
