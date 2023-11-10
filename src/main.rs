@@ -1,9 +1,12 @@
 mod quad;
 mod texture;
 
+use etagere::{size2, AtlasAllocator};
+use fontdue::Font;
+use image::{ImageBuffer, ImageOutputFormat, Rgb, RgbImage, Rgba, RgbaImage};
 use quad::Quad;
-use std::io::Write;
 use std::iter;
+use std::{fs::File, io::Write};
 use wgpu::{util::DeviceExt, BindGroup, Buffer};
 use winit::{
     event::{Event, WindowEvent},
@@ -97,9 +100,6 @@ impl Vertex {
     }
 }
 
-const CHARACTER: char = 'G';
-const SIZE: f32 = 72.0;
-
 fn init_env_logger() {
     env_logger::builder()
         .format(|buf, record| {
@@ -128,15 +128,50 @@ fn init_env_logger() {
         .init();
 }
 
+fn generate_img_atlas(font: &Font) -> RgbImage {
+    let mut atlas = AtlasAllocator::new(size2(1024, 1024));
+    let mut img = RgbImage::new(1024, 1024);
+
+    for glyph in font.chars() {
+        let (metrics, bitmap) = font.rasterize_subpixel(*glyph.0, 24.0);
+        let slot = atlas.allocate(size2(metrics.width as i32, metrics.height as i32));
+
+        if let Some(rect) = slot {
+            let rect = rect.rectangle;
+
+            let mut img_y = rect.min.y;
+            for y in 0..metrics.height {
+                let mut img_x = rect.min.x;
+                for x in (0..metrics.width * 3).step_by(3) {
+                    let r = bitmap[x + y * metrics.width * 3];
+                    let g = bitmap[x + 1 + y * metrics.width * 3];
+                    let b = bitmap[x + 2 + y * metrics.width * 3];
+
+                    img.put_pixel(img_x as u32, img_y as u32, Rgb([r, g, b]));
+
+                    img_x += 1;
+                }
+                img_y += 1;
+            }
+        }
+    }
+
+    img
+}
+
 pub fn main() {
     let font = include_bytes!("../res/Roboto-Regular.ttf") as &[u8];
     let settings = fontdue::FontSettings {
-        scale: SIZE,
+        scale: 72.0,
         ..fontdue::FontSettings::default()
     };
     let font = fontdue::Font::from_bytes(font, settings).unwrap();
-    let (metrics, bitmap) = font.rasterize_subpixel(CHARACTER, SIZE);
-    println!("Glyphs: {}", font.glyph_count());
+
+    let atlas_img = generate_img_atlas(&font);
+    let mut atlas_png = File::create("font_atlas.png").unwrap();
+    atlas_img
+        .write_to(&mut atlas_png, ImageOutputFormat::Png)
+        .unwrap();
 
     pollster::block_on(app());
 }
@@ -258,12 +293,20 @@ impl State {
             label: Some("uniforms_bind_group"),
         });
 
-        let instances = vec![Instance {
-            bbox: [300.0, 250.0, 350.0, 300.0],
-            color: [0.0, 0.0, 1.0, 1.0],
-            sigma: 4.0,
-            corner_radius: 20.0,
-        }];
+        let instances = vec![
+            Instance {
+                bbox: [300.0, 250.0, 350.0, 300.0],
+                color: [0.0, 0.0, 1.0, 1.0],
+                sigma: 10.0,
+                corner_radius: 20.0,
+            },
+            // Instance {
+            //     bbox: [300.0, 250.0, 350.0, 300.0],
+            //     color: [0.0, 0.0, 1.0, 1.0],
+            //     sigma: 4.0,
+            //     corner_radius: 20.0,
+            // },
+        ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
@@ -359,7 +402,7 @@ impl State {
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                alpha_to_coverage_enabled: true,
             },
             multiview: None,
         });

@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0.75"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 env_logger = "0.10.0"
+etagere = "0.2.9"
 fontdue = "0.7.3"
 image = "0.24.7"
 log = "0.4.20"
