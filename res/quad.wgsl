@@ -6,7 +6,9 @@ struct Quad {
     @location(1) origin: vec2f,
     @location(2) size: vec2f,
     @location(3) color: vec4f,
-    @location(4) radius: f32,
+    @location(4) border_color: vec4f,
+    @location(5) border: f32,
+    @location(6) radius: f32,
 }
 
 struct FragmentInput {
@@ -16,6 +18,8 @@ struct FragmentInput {
     @location(2) color: vec4f,
     @location(3) radius: f32,
     @location(4) pos: vec2f,
+    @location(5) border: f32,
+    @location(6) border_color: vec4f,
 }
 
 struct Uniforms {
@@ -31,6 +35,8 @@ fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
     let scaled_coords = uniforms.window_size.xy * 0.5 * (transformed_coords + vec2f(1.0, 1.0));
 
     var out: FragmentInput;
+    out.border = quad.border;
+    out.border_color = quad.border_color;
     out.pos = scaled_coords;
     out.position = vec4f(transformed_coords, 0.0, 1.0);
     out.origin = quad.origin;
@@ -47,9 +53,17 @@ fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f3
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
     let pos = (in.pos.xy / (uniforms.window_size.xy / 2.0)) - 1.0;
-    var dist = rounded_rect_sdf(pos, in.origin, in.size, in.radius);
+    let dist = rounded_rect_sdf(pos, in.origin, in.size, in.radius);
 
-    var color = select(in.color.xyz, vec3(0.0, 0.0, 0.0), dist > 0.0);
+    var color: vec3f;
+    if dist < in.border {
+        color = in.color.xyz;
+    } else if dist < 0.0 {
+        color = in.border_color.xyz;
+    } else {
+        color = vec3f(0.0, 0.0, 0.0);
+    }
+
     color = mix(color, vec3f(1.0), 1.0 - smoothstep(-1.0, 0.0, abs(dist)));
     return vec4f(color, 1.0);
 }

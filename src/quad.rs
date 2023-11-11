@@ -29,6 +29,8 @@ pub struct Quad {
     pub origin: [f32; 2],
     pub size: [f32; 2],
     pub color: [f32; 4],
+    pub border_color: [f32; 4],
+    pub border: f32,
     pub radius: f32,
 }
 
@@ -56,6 +58,16 @@ impl Quad {
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
                     shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 13]>() as wgpu::BufferAddress,
+                    shader_location: 6,
                     format: wgpu::VertexFormat::Float32,
                 },
             ],
@@ -230,18 +242,24 @@ impl QuadRenderer {
                 size: [0.25, 0.25],
                 color: [0.1, 0.0, 0.1, 1.0],
                 radius: 0.1,
+                border: -0.05,
+                border_color: [0.4, 0.1, 0.8, 1.0],
             },
             Quad {
                 origin: [0.25, 0.25],
                 size: [0.15, 0.15],
                 color: [0.1, 0.0, 0.1, 1.0],
                 radius: 0.05,
+                border: -0.01,
+                border_color: [0.0, 0.5, 0.1, 1.0],
             },
             Quad {
                 origin: [-0.25, 0.25],
                 size: [0.30, 0.05],
                 color: [0.1, 0.0, 0.1, 1.0],
                 radius: 0.025,
+                border: -0.02,
+                border_color: [0.2, 0.1, 0.8, 1.0],
             },
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
