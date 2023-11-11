@@ -229,13 +229,19 @@ impl QuadRenderer {
                 origin: [-0.25, -0.25],
                 size: [0.25, 0.25],
                 color: [0.1, 0.0, 0.1, 1.0],
+                radius: 0.1,
+            },
+            Quad {
+                origin: [0.25, 0.25],
+                size: [0.15, 0.15],
+                color: [0.1, 0.0, 0.1, 1.0],
                 radius: 0.05,
             },
             Quad {
-                origin: [0.25, -0.25],
-                size: [0.15, 0.25],
+                origin: [-0.25, 0.25],
+                size: [0.30, 0.05],
                 color: [0.1, 0.0, 0.1, 1.0],
-                radius: 0.05,
+                radius: 0.025,
             },
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
