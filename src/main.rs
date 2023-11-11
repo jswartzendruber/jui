@@ -101,11 +101,11 @@ pub fn main() {
     let font = fontdue::Font::from_bytes(font, settings).unwrap();
 
     let atlas = generate_img_atlas(&font, 36.0);
-    let mut atlas_png = File::create("font_atlas.png").unwrap();
-    atlas
-        .atlas_image
-        .write_to(&mut atlas_png, image::ImageOutputFormat::Png)
-        .unwrap();
+    // let mut atlas_png = File::create("font_atlas.png").unwrap();
+    // atlas
+    //     .atlas_image
+    //     .write_to(&mut atlas_png, image::ImageOutputFormat::Png)
+    //     .unwrap();
 
     pollster::block_on(run_event_loop(&atlas));
 }

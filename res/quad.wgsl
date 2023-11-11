@@ -1,5 +1,10 @@
 struct Vertex {
-    @location(0) position: vec2f,
+    @location(0) pos: vec2f,
+}
+
+struct Quad {
+    @location(1) scale: vec2f,
+    @location(2) pos: vec2f,
 }
 
 struct FragmentInput {
@@ -7,9 +12,17 @@ struct FragmentInput {
 }
 
 @vertex
-fn vs_main(vertex: Vertex) -> FragmentInput {
+fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
     var out: FragmentInput;
-    out.position = vec4f(vertex.position, 0.0, 1.0);
+
+    var transform: mat4x4<f32> = mat4x4<f32>(
+        vec4<f32>(quad.scale.x, 0.0, 0.0, 0.0),
+        vec4<f32>(0.0, quad.scale.y, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(quad.pos, 0.0, 1.0)
+    );
+
+    out.position = transform * vec4f(vertex.pos, 0.0, 1.0);
     return out;
 }
 
