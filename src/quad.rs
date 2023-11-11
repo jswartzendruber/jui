@@ -1,6 +1,7 @@
 use wgpu::{
     util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat,
 };
+use winit::dpi::PhysicalSize;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -25,8 +26,10 @@ impl Vertex {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Quad {
+    pub origin: [f32; 2],
     pub size: [f32; 2],
-    pub pos: [f32; 2],
+    pub color: [f32; 4],
+    pub radius: f32,
 }
 
 impl Quad {
@@ -45,20 +48,32 @@ impl Quad {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
 }
 
-/*  D--C
+/*
+D--C
 |\ |
 | \|
-A--B  */
+A--B
+*/
 const VERTICES: &[Vertex] = &[
-    Vertex { pos: [0.0, 0.0] }, // A
-    Vertex { pos: [1.0, 0.0] }, // B
-    Vertex { pos: [1.0, 1.0] }, // C
-    Vertex { pos: [0.0, 1.0] }, // D
+    Vertex { pos: [-1.0, -1.0] }, // A
+    Vertex { pos: [1.0, -1.0] },  // B
+    Vertex { pos: [1.0, 1.0] },   // C
+    Vertex { pos: [-1.0, 1.0] },  // D
 ];
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
@@ -67,14 +82,15 @@ const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     camera: [[f32; 4]; 4],
+    window_size: [f32; 4], // padding cuz wgsl dumb
 }
 
 impl Uniforms {
-    fn new() -> Self {
+    fn new(size: PhysicalSize<u32>) -> Self {
         let left = 0.0;
-        let right = 800.0;
+        let right = size.width as f32;
         let bottom = 0.0;
-        let top = 600.0;
+        let top = size.height as f32;
         let near = 1.0;
         let far = -1.0;
 
@@ -90,6 +106,7 @@ impl Uniforms {
                     1.0,
                 ],
             ],
+            window_size: [size.width as f32, size.height as f32, 0.0, 0.0],
         }
     }
 }
@@ -103,13 +120,13 @@ pub struct QuadRenderer {
     instances: Vec<Quad>,
     instance_buffer: Buffer,
 
+    uniforms_buffer: Buffer,
     uniforms_bind_group: BindGroup,
 }
 
 impl QuadRenderer {
-    pub fn new(device: &Device, format: &TextureFormat) -> Self {
-        let uniforms = Uniforms::new();
-        println!("{:?}", uniforms);
+    pub fn new(device: &Device, format: &TextureFormat, size: PhysicalSize<u32>) -> Self {
+        let uniforms = Uniforms::new(size);
 
         let uniforms_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniforms buffer"),
@@ -121,7 +138,7 @@ impl QuadRenderer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -209,12 +226,16 @@ impl QuadRenderer {
 
         let instances = vec![
             Quad {
-                size: [400.0, 300.0],
-                pos: [400.0, 300.0],
+                origin: [-0.25, -0.25],
+                size: [0.25, 0.25],
+                color: [0.1, 0.0, 0.1, 1.0],
+                radius: 0.05,
             },
             Quad {
-                size: [400.0, 300.0],
-                pos: [0.0, 0.0],
+                origin: [0.25, -0.25],
+                size: [0.15, 0.25],
+                color: [0.1, 0.0, 0.1, 1.0],
+                radius: 0.05,
             },
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -232,8 +253,14 @@ impl QuadRenderer {
             instances,
             instance_buffer,
 
+            uniforms_buffer,
             uniforms_bind_group,
         }
+    }
+
+    pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
+        let uniforms = Uniforms::new(size);
+        queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
 
     pub fn prepare(&mut self, _device: &Device, _queue: &Queue) {}
@@ -247,3 +274,8 @@ impl QuadRenderer {
         rpass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as u32);
     }
 }
+
+/*
+    scaling is fucked, works fine on previous commit. something with the sdf is
+    wrong (suprise!)
+*/

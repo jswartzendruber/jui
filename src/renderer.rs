@@ -70,7 +70,7 @@ impl State {
 
         surface.configure(&device, &config);
 
-        let quad_renderer = QuadRenderer::new(&device, &config.format);
+        let quad_renderer = QuadRenderer::new(&device, &config.format, size);
 
         Self {
             surface,
@@ -92,7 +92,10 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        self.quad_renderer
+            .update(self.window.inner_size(), &self.queue);
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
