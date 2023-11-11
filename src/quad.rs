@@ -1,4 +1,6 @@
-use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat};
+use wgpu::{
+    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -23,7 +25,7 @@ impl Vertex {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Quad {
-    pub scale: [f32; 2],
+    pub size: [f32; 2],
     pub pos: [f32; 2],
 }
 
@@ -61,17 +63,84 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Uniforms {
+    camera: [[f32; 4]; 4],
+}
+
+impl Uniforms {
+    fn new() -> Self {
+        let left = 0.0;
+        let right = 800.0;
+        let bottom = 0.0;
+        let top = 600.0;
+        let near = 1.0;
+        let far = -1.0;
+
+        Self {
+            camera: [
+                [2.0 / (right - left), 0.0, 0.0, 0.0],
+                [0.0, 2.0 / (top - bottom), 0.0, 0.0],
+                [0.0, 0.0, -2.0 / (far - near), 0.0],
+                [
+                    -(right + left) / (right - left),
+                    -(top + bottom) / (top - bottom),
+                    -(far + near) / (far - near),
+                    1.0,
+                ],
+            ],
+        }
+    }
+}
+
 pub struct QuadRenderer {
     render_pipeline: RenderPipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     num_indices: u32,
+
     instances: Vec<Quad>,
     instance_buffer: Buffer,
+
+    uniforms_bind_group: BindGroup,
 }
 
 impl QuadRenderer {
     pub fn new(device: &Device, format: &TextureFormat) -> Self {
+        let uniforms = Uniforms::new();
+        println!("{:?}", uniforms);
+
+        let uniforms_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniforms buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let uniforms_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("uniforms_bind_group_layout"),
+            });
+
+        let uniforms_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniforms_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniforms_buffer.as_entire_binding(),
+            }],
+            label: Some("uniforms_bind_group"),
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Quad Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../res/quad.wgsl").into()),
@@ -80,7 +149,7 @@ impl QuadRenderer {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&uniforms_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -140,11 +209,11 @@ impl QuadRenderer {
 
         let instances = vec![
             Quad {
-                scale: [1.0, 1.0],
-                pos: [-1.0, -1.0],
+                size: [400.0, 300.0],
+                pos: [400.0, 300.0],
             },
             Quad {
-                scale: [1.0, 1.0],
+                size: [400.0, 300.0],
                 pos: [0.0, 0.0],
             },
         ];
@@ -159,8 +228,11 @@ impl QuadRenderer {
             vertex_buffer,
             index_buffer,
             num_indices,
+
             instances,
             instance_buffer,
+
+            uniforms_bind_group,
         }
     }
 
@@ -168,6 +240,7 @@ impl QuadRenderer {
 
     pub fn render<'rpass>(&'rpass self, rpass: &mut RenderPass<'rpass>) {
         rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_bind_group(0, &self.uniforms_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
