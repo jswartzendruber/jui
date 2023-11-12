@@ -296,7 +296,7 @@ impl TexturedQuadRenderer {
             Quad {
                 origin: [0.3, 0.35],
                 size: [0.2, 0.2],
-                radius: 0.04,
+                radius: 0.0,
                 border: -0.0035,
                 border_color: [1.0, 1.0, 1.0, 1.0],
             },

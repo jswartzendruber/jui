@@ -51,24 +51,13 @@ fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f3
     return length(max(d, vec2f(0.0, 0.0))) - radius + min(max(d.x, d.y), 0.0);
 }
 
-fn rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f) -> f32 {
-    let d = abs(frag_pos - rect_center) - size;
-    return length(max(d, vec2f(0.0, 0.0))) + min(max(d.x, d.y), 0.0);
-}
-
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
     let pos = (in.pos.xy / (uniforms.window_size.xy / 2.0)) - 1.0;
-
-    var dist: f32;
-    if in.radius != 0.0 {
-        dist = rounded_rect_sdf(pos, in.origin, in.size, in.radius);
-    } else {
-        dist = rect_sdf(pos, in.origin, in.size);
-    }
+    let dist = rounded_rect_sdf(pos, in.origin, in.size, in.radius);
 
     var color: vec3f;
     if dist < in.border {

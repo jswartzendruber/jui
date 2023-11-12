@@ -46,8 +46,9 @@ fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
     return out;
 }
 
-fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f32) -> f32{
-    return length(max(abs(frag_pos - rect_center) - size + radius, vec2f(0.0, 0.0))) - radius;
+fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f32) -> f32 {
+    let d = abs(frag_pos - rect_center) - size + radius;
+    return length(max(d, vec2f(0.0, 0.0))) - radius + min(max(d.x, d.y), 0.0);
 }
 
 @fragment
