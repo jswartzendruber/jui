@@ -1,6 +1,6 @@
 use crate::quad::QuadRenderer;
+use crate::text_renderer::TextRenderer;
 use crate::textured_quad::TexturedQuadRenderer;
-use crate::Atlas;
 use std::iter;
 use winit::window::Window;
 
@@ -10,13 +10,15 @@ pub struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
+    pub window: Window,
+
     quad_renderer: QuadRenderer,
     textured_quad_renderer: TexturedQuadRenderer,
-    pub window: Window,
+    text_renderer: TextRenderer,
 }
 
 impl State {
-    pub async fn new(window: Window, _atlas: &Atlas) -> Self {
+    pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -73,7 +75,9 @@ impl State {
         surface.configure(&device, &config);
 
         let quad_renderer = QuadRenderer::new(&device, &config.format, size);
-        let textured_quad_renderer = TexturedQuadRenderer::new(&device, &queue, &config.format, size);
+        let textured_quad_renderer =
+            TexturedQuadRenderer::new(&device, &queue, &config.format, size);
+        let text_renderer = TextRenderer::new(&device, &queue, &config.format, size);
 
         Self {
             surface,
@@ -82,8 +86,10 @@ impl State {
             config,
             size,
             window,
+
             quad_renderer,
             textured_quad_renderer,
+            text_renderer,
         }
     }
 
@@ -100,6 +106,8 @@ impl State {
         self.quad_renderer
             .update(self.window.inner_size(), &self.queue);
         self.textured_quad_renderer
+            .update(self.window.inner_size(), &self.queue);
+        self.text_renderer
             .update(self.window.inner_size(), &self.queue);
     }
 
@@ -138,9 +146,13 @@ impl State {
 
             self.quad_renderer.prepare(&self.device, &self.queue);
             self.quad_renderer.render(&mut render_pass);
+
             self.textured_quad_renderer
                 .prepare(&self.device, &self.queue);
             self.textured_quad_renderer.render(&mut render_pass);
+
+            self.text_renderer.prepare(&self.device, &self.queue);
+            self.text_renderer.render(&mut render_pass);
         }
 
         self.queue.submit(iter::once(encoder.finish()));

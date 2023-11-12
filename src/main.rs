@@ -1,14 +1,11 @@
 mod quad;
 mod renderer;
-mod textured_quad;
 mod texture;
+mod textured_quad;
+mod text_renderer;
 
-use etagere::*;
-use fontdue::Font;
-use image::{Rgba, RgbaImage};
 use renderer::State;
 use std::io::Write;
-use std::{collections::HashMap, fs::File};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -43,82 +40,17 @@ fn init_env_logger() {
         .init();
 }
 
-struct Atlas {
-    allocator: AtlasAllocator,
-    atlas_size_x: f32,
-    atlas_size_y: f32,
-    atlas_image: RgbaImage,
-    allocator_map: HashMap<char, Option<Allocation>>,
-}
-
-fn generate_img_atlas(font: &Font, font_size: f32) -> Atlas {
-    let atlas_size_x = 1024.0;
-    let atlas_size_y = 1024.0;
-    let mut atlas = AtlasAllocator::new(size2(atlas_size_x as i32, atlas_size_y as i32));
-    let mut img = RgbaImage::from_pixel(1024, 1024, Rgba([0, 0, 0, 255]));
-    let mut chars_to_allocs = HashMap::new();
-
-    for glyph in font.chars() {
-        if glyph.0 != &'A' {
-            continue;
-        }
-        let (metrics, bitmap) = font.rasterize_subpixel(*glyph.0, font_size);
-        let slot = atlas.allocate(size2(metrics.width as i32, metrics.height as i32));
-        chars_to_allocs.insert(*glyph.0, slot);
-
-        if let Some(rect) = slot {
-            let rect = rect.rectangle;
-
-            let mut img_y = rect.min.y;
-            for y in 0..metrics.height {
-                let mut img_x = rect.min.x;
-                for x in (0..metrics.width * 3).step_by(3) {
-                    let r = bitmap[x + y * metrics.width * 3];
-                    let g = bitmap[x + 1 + y * metrics.width * 3];
-                    let b = bitmap[x + 2 + y * metrics.width * 3];
-
-                    img.put_pixel(img_x as u32, img_y as u32, Rgba([r, g, b, 255]));
-                    img_x += 1;
-                }
-                img_y += 1;
-            }
-        }
-    }
-
-    Atlas {
-        allocator: atlas,
-        atlas_image: img,
-        allocator_map: chars_to_allocs,
-        atlas_size_x,
-        atlas_size_y,
-    }
-}
-
 pub fn main() {
-    let font = include_bytes!("../res/Roboto-Regular.ttf") as &[u8];
-    let settings = fontdue::FontSettings {
-        scale: 72.0,
-        ..fontdue::FontSettings::default()
-    };
-    let font = fontdue::Font::from_bytes(font, settings).unwrap();
-
-    let atlas = generate_img_atlas(&font, 36.0);
-    // let mut atlas_png = File::create("font_atlas.png").unwrap();
-    // atlas
-    //     .atlas_image
-    //     .write_to(&mut atlas_png, image::ImageOutputFormat::Png)
-    //     .unwrap();
-
-    pollster::block_on(run_event_loop(&atlas));
+    pollster::block_on(run_event_loop());
 }
 
-async fn run_event_loop(atlas: &Atlas) {
+async fn run_event_loop() {
     init_env_logger();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut state = State::new(window, atlas).await;
+    let mut state = State::new(window).await;
 
     event_loop
         .run(move |event, elwt| match event {
