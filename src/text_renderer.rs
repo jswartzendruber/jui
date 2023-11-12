@@ -96,31 +96,12 @@ const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
-    camera: [[f32; 4]; 4],
     window_size: [f32; 4], // padding cuz wgsl dumb
 }
 
 impl Uniforms {
     fn new(size: PhysicalSize<u32>) -> Self {
-        let left = 0.0;
-        let right = size.width as f32;
-        let bottom = 0.0;
-        let top = size.height as f32;
-        let near = 1.0;
-        let far = -1.0;
-
         Self {
-            camera: [
-                [2.0 / (right - left), 0.0, 0.0, 0.0],
-                [0.0, 2.0 / (top - bottom), 0.0, 0.0],
-                [0.0, 0.0, -2.0 / (far - near), 0.0],
-                [
-                    -(right + left) / (right - left),
-                    -(top + bottom) / (top - bottom),
-                    -(far + near) / (far - near),
-                    1.0,
-                ],
-            ],
             window_size: [size.width as f32, size.height as f32, 0.0, 0.0],
         }
     }
@@ -141,7 +122,7 @@ pub struct TextRenderer {
     texture_bind_group: BindGroup,
 
     atlas: Atlas,
-    character: char,
+    pub character: char,
 }
 
 impl TextRenderer {
@@ -190,14 +171,7 @@ impl TextRenderer {
         };
         let font = fontdue::Font::from_bytes(font, settings).unwrap();
 
-        let atlas = Self::generate_img_atlas(&font, 36.0);
-        // let mut atlas_png = File::create("font_atlas.png").unwrap();
-        // atlas
-        //     .atlas_image
-        //     .write_to(&mut atlas_png, image::ImageOutputFormat::Png)
-        //     .unwrap();
-
-        atlas
+        Self::generate_img_atlas(&font, 36.0)
     }
 
     pub fn new(
@@ -209,7 +183,7 @@ impl TextRenderer {
         let atlas = Self::gen_atlas();
         let img = image::DynamicImage::ImageRgba8(atlas.atlas_image.clone());
         let image_texture =
-            Texture::from_image(&device, &queue, &img, Some("Atlas image")).unwrap();
+            Texture::from_image(device, queue, &img, Some("Atlas image")).unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -404,22 +378,14 @@ impl TextRenderer {
             let y0 = (char_pos.1 + char_size.1) / atlas_size.1;
             let y1 = char_pos.1 / atlas_size.1;
 
-            let mut cloned_vertices: Vec<Vertex> = VERTICES.iter().cloned().collect();
-            cloned_vertices[0].tex_coords = [x0, y0];
-            cloned_vertices[1].tex_coords = [x1, y0];
-            cloned_vertices[2].tex_coords = [x1, y1];
-            cloned_vertices[3].tex_coords = [x0, y1];
-            let cloned_vertices = [
-                cloned_vertices[0],
-                cloned_vertices[1],
-                cloned_vertices[2],
-                cloned_vertices[3],
+            #[rustfmt::skip]
+            let vertices: &[Vertex] = &[
+                Vertex { pos: VERTICES[0].pos, tex_coords: [x0, y0], },
+                Vertex { pos: VERTICES[1].pos, tex_coords: [x1, y0], },
+                Vertex { pos: VERTICES[2].pos, tex_coords: [x1, y1], },
+                Vertex { pos: VERTICES[3].pos, tex_coords: [x0, y1], },
             ];
-            queue.write_buffer(
-                &self.vertex_buffer,
-                0,
-                bytemuck::cast_slice(&[cloned_vertices]),
-            );
+            queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(vertices));
         }
     }
 

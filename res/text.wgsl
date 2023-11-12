@@ -19,7 +19,6 @@ struct FragmentInput {
 }
 
 struct Uniforms {
-    camera: mat4x4f,
     window_size: vec4f, // padding
 }
 

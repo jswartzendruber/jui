@@ -14,7 +14,7 @@ pub struct State {
 
     quad_renderer: QuadRenderer,
     textured_quad_renderer: TexturedQuadRenderer,
-    text_renderer: TextRenderer,
+    pub text_renderer: TextRenderer,
 }
 
 impl State {
@@ -103,12 +103,11 @@ impl State {
     }
 
     pub fn update(&mut self) {
-        self.quad_renderer
-            .update(self.window.inner_size(), &self.queue);
-        self.textured_quad_renderer
-            .update(self.window.inner_size(), &self.queue);
-        self.text_renderer
-            .update(self.window.inner_size(), &self.queue);
+        let window_size = self.window.inner_size();
+
+        self.quad_renderer.update(window_size, &self.queue);
+        self.textured_quad_renderer.update(window_size, &self.queue);
+        self.text_renderer.update(window_size, &self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

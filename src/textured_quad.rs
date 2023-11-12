@@ -1,9 +1,8 @@
+use crate::texture::Texture;
 use wgpu::{
     util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat,
 };
 use winit::dpi::PhysicalSize;
-
-use crate::texture::Texture;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -98,31 +97,12 @@ const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
-    camera: [[f32; 4]; 4],
     window_size: [f32; 4], // padding cuz wgsl dumb
 }
 
 impl Uniforms {
     fn new(size: PhysicalSize<u32>) -> Self {
-        let left = 0.0;
-        let right = size.width as f32;
-        let bottom = 0.0;
-        let top = size.height as f32;
-        let near = 1.0;
-        let far = -1.0;
-
         Self {
-            camera: [
-                [2.0 / (right - left), 0.0, 0.0, 0.0],
-                [0.0, 2.0 / (top - bottom), 0.0, 0.0],
-                [0.0, 0.0, -2.0 / (far - near), 0.0],
-                [
-                    -(right + left) / (right - left),
-                    -(top + bottom) / (top - bottom),
-                    -(far + near) / (far - near),
-                    1.0,
-                ],
-            ],
             window_size: [size.width as f32, size.height as f32, 0.0, 0.0],
         }
     }
@@ -155,7 +135,7 @@ impl TexturedQuadRenderer {
             .decode()
             .unwrap();
         let image_texture =
-            Texture::from_image(&device, &queue, &img, Some("Dirt block image")).unwrap();
+            Texture::from_image(device, queue, &img, Some("Dirt block image")).unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
