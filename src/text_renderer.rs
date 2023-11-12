@@ -9,7 +9,6 @@ use wgpu::{
 use winit::dpi::PhysicalSize;
 
 struct Atlas {
-    allocator: AtlasAllocator,
     atlas_size_x: f32,
     atlas_size_y: f32,
     atlas_image: RgbaImage,
@@ -46,18 +45,16 @@ impl Vertex {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Quad {
+pub struct Char {
     pub origin: [f32; 2],
     pub size: [f32; 2],
-    pub border_color: [f32; 4],
-    pub border: f32,
-    pub radius: f32,
+    pub color: [f32; 4],
 }
 
-impl Quad {
+impl Char {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Quad>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<Char>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -74,16 +71,6 @@ impl Quad {
                     offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 9]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }
@@ -145,13 +132,16 @@ pub struct TextRenderer {
     index_buffer: Buffer,
     num_indices: u32,
 
-    instances: Vec<Quad>,
+    instances: Vec<Char>,
     instance_buffer: Buffer,
 
     uniforms_buffer: Buffer,
     uniforms_bind_group: BindGroup,
 
     texture_bind_group: BindGroup,
+
+    atlas: Atlas,
+    character: char,
 }
 
 impl TextRenderer {
@@ -163,7 +153,7 @@ impl TextRenderer {
         let mut chars_to_allocs = HashMap::new();
 
         for glyph in font.chars() {
-            let (metrics, bitmap) = font.rasterize_subpixel(*glyph.0, font_size);
+            let (metrics, bitmap) = font.rasterize(*glyph.0, font_size);
             let slot = atlas.allocate(size2(metrics.width as i32, metrics.height as i32));
             chars_to_allocs.insert(*glyph.0, slot);
 
@@ -173,12 +163,10 @@ impl TextRenderer {
                 let mut img_y = rect.min.y;
                 for y in 0..metrics.height {
                     let mut img_x = rect.min.x;
-                    for x in (0..metrics.width * 3).step_by(3) {
-                        let r = bitmap[x + y * metrics.width * 3];
-                        let g = bitmap[x + 1 + y * metrics.width * 3];
-                        let b = bitmap[x + 2 + y * metrics.width * 3];
+                    for x in 0..metrics.width {
+                        let r = bitmap[x + y * metrics.width];
 
-                        img.put_pixel(img_x as u32, img_y as u32, Rgba([r, g, b, 255]));
+                        img.put_pixel(img_x as u32, img_y as u32, Rgba([r, r, r, r]));
                         img_x += 1;
                     }
                     img_y += 1;
@@ -187,7 +175,6 @@ impl TextRenderer {
         }
 
         Atlas {
-            allocator: atlas,
             atlas_image: img,
             allocator_map: chars_to_allocs,
             atlas_size_x,
@@ -220,7 +207,7 @@ impl TextRenderer {
         size: PhysicalSize<u32>,
     ) -> Self {
         let atlas = Self::gen_atlas();
-        let img = image::DynamicImage::ImageRgba8(atlas.atlas_image);
+        let img = image::DynamicImage::ImageRgba8(atlas.atlas_image.clone());
         let image_texture =
             Texture::from_image(&device, &queue, &img, Some("Atlas image")).unwrap();
 
@@ -311,7 +298,7 @@ impl TextRenderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), Quad::desc()],
+                buffers: &[Vertex::desc(), Char::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -350,7 +337,7 @@ impl TextRenderer {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
@@ -359,13 +346,18 @@ impl TextRenderer {
         });
         let num_indices = INDICES.len() as u32;
 
-        let instances = vec![Quad {
-            origin: [0.5, -0.75],
-            size: [0.5, 0.5],
-            radius: 0.0,
-            border: 0.0,
-            border_color: [1.0, 1.0, 1.0, 1.0],
-        }];
+        let instances = vec![
+            Char {
+                origin: [0.5, -0.75],
+                size: [0.024, 0.032],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+            Char {
+                origin: [0.55, -0.752],
+                size: [0.024, 0.032],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+        ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
@@ -385,12 +377,50 @@ impl TextRenderer {
             uniforms_bind_group,
 
             texture_bind_group,
+
+            atlas,
+            character: 'J',
         }
     }
 
     pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+
+        let character_coordinates = self.atlas.allocator_map.get(&self.character);
+        if let Some(Some(char_coords)) = character_coordinates {
+            let atlas_size = (self.atlas.atlas_size_x, self.atlas.atlas_size_y);
+            let char_pos = (
+                char_coords.rectangle.min.x as f32,
+                char_coords.rectangle.min.y as f32,
+            );
+            let char_size = (
+                char_coords.rectangle.width() as f32,
+                char_coords.rectangle.height() as f32,
+            );
+
+            let x0 = char_pos.0 / atlas_size.0;
+            let x1 = (char_pos.0 + char_size.0) / atlas_size.0;
+            let y0 = (char_pos.1 + char_size.1) / atlas_size.1;
+            let y1 = char_pos.1 / atlas_size.1;
+
+            let mut cloned_vertices: Vec<Vertex> = VERTICES.iter().cloned().collect();
+            cloned_vertices[0].tex_coords = [x0, y0];
+            cloned_vertices[1].tex_coords = [x1, y0];
+            cloned_vertices[2].tex_coords = [x1, y1];
+            cloned_vertices[3].tex_coords = [x0, y1];
+            let cloned_vertices = [
+                cloned_vertices[0],
+                cloned_vertices[1],
+                cloned_vertices[2],
+                cloned_vertices[3],
+            ];
+            queue.write_buffer(
+                &self.vertex_buffer,
+                0,
+                bytemuck::cast_slice(&[cloned_vertices]),
+            );
+        }
     }
 
     pub fn prepare(&mut self, _device: &Device, _queue: &Queue) {}

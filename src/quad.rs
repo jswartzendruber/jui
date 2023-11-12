@@ -247,7 +247,7 @@ impl QuadRenderer {
                 border_color: [0.0, 0.7, 0.8, 1.0],
             },
             Quad {
-                origin: [-0.5, -0.1],
+                origin: [-0.6, -0.1],
                 size: [0.2, 0.05],
                 color: [0.0, 0.0, 0.0, 1.0],
                 radius: 0.0,
