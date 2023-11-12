@@ -3,10 +3,13 @@ use wgpu::{
 };
 use winit::dpi::PhysicalSize;
 
+use crate::texture::Texture;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub pos: [f32; 2],
+    pub tex_coords: [f32; 2],
 }
 
 impl Vertex {
@@ -14,11 +17,18 @@ impl Vertex {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x2,
-            }],
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
         }
     }
 }
@@ -28,7 +38,6 @@ impl Vertex {
 pub struct Quad {
     pub origin: [f32; 2],
     pub size: [f32; 2],
-    pub color: [f32; 4],
     pub border_color: [f32; 4],
     pub border: f32,
     pub radius: f32,
@@ -42,31 +51,26 @@ impl Quad {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 13]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of::<[f32; 9]>() as wgpu::BufferAddress,
                     shader_location: 6,
                     format: wgpu::VertexFormat::Float32,
                 },
@@ -83,10 +87,10 @@ A--B
 */
 #[rustfmt::skip]
 const VERTICES: &[Vertex] = &[
-    Vertex { pos: [-1.0, -1.0] }, // A
-    Vertex { pos: [ 1.0, -1.0] }, // B
-    Vertex { pos: [ 1.0,  1.0] }, // C
-    Vertex { pos: [-1.0,  1.0] }, // D
+    Vertex { pos: [-1.0, -1.0], tex_coords: [0.0, 1.0] }, // A
+    Vertex { pos: [ 1.0, -1.0], tex_coords: [1.0, 1.0] }, // B
+    Vertex { pos: [ 1.0,  1.0], tex_coords: [1.0, 0.0] }, // C
+    Vertex { pos: [-1.0,  1.0], tex_coords: [0.0, 0.0] }, // D
 ];
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
@@ -124,7 +128,7 @@ impl Uniforms {
     }
 }
 
-pub struct QuadRenderer {
+pub struct TexturedQuadRenderer {
     render_pipeline: RenderPipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -135,10 +139,61 @@ pub struct QuadRenderer {
 
     uniforms_buffer: Buffer,
     uniforms_bind_group: BindGroup,
+
+    texture_bind_group: BindGroup,
 }
 
-impl QuadRenderer {
-    pub fn new(device: &Device, format: &TextureFormat, size: PhysicalSize<u32>) -> Self {
+impl TexturedQuadRenderer {
+    pub fn new(
+        device: &Device,
+        queue: &Queue,
+        format: &TextureFormat,
+        size: PhysicalSize<u32>,
+    ) -> Self {
+        let img = image::io::Reader::open("res/test_img.jpg")
+            .unwrap()
+            .decode()
+            .unwrap();
+        let image_texture =
+            Texture::from_image(&device, &queue, &img, Some("Dirt block image")).unwrap();
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&image_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&image_texture.sampler),
+                },
+            ],
+            label: Some("texture_bind_group"),
+        });
+
         let uniforms = Uniforms::new(size);
 
         let uniforms_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -173,13 +228,13 @@ impl QuadRenderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Quad Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../res/quad.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../res/textured_quad.wgsl").into()),
         });
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&uniforms_bind_group_layout],
+                bind_group_layouts: &[&uniforms_bind_group_layout, &texture_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -237,21 +292,29 @@ impl QuadRenderer {
         });
         let num_indices = INDICES.len() as u32;
 
-        let instances = vec![Quad {
-            origin: [0.0, 0.0],
-            size: [0.2, 0.05],
-            color: [0.0, 0.0, 0.0, 1.0],
-            radius: 0.04,
-            border: -0.0025,
-            border_color: [0.0, 0.7, 0.8, 1.0],
-        }];
+        let instances = vec![
+            Quad {
+                origin: [0.3, 0.35],
+                size: [0.2, 0.2],
+                radius: 0.04,
+                border: -0.0035,
+                border_color: [1.0, 1.0, 1.0, 1.0],
+            },
+            Quad {
+                origin: [-0.3, 0.3],
+                size: [0.15, 0.2],
+                radius: 0.1,
+                border: -0.0125,
+                border_color: [0.9, 0.2, 0.3, 1.0],
+            },
+        ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        QuadRenderer {
+        TexturedQuadRenderer {
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -262,6 +325,8 @@ impl QuadRenderer {
 
             uniforms_buffer,
             uniforms_bind_group,
+
+            texture_bind_group,
         }
     }
 
@@ -275,6 +340,7 @@ impl QuadRenderer {
     pub fn render<'rpass>(&'rpass self, rpass: &mut RenderPass<'rpass>) {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.uniforms_bind_group, &[]);
+        rpass.set_bind_group(1, &self.texture_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

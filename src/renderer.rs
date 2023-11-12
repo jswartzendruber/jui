@@ -1,4 +1,5 @@
 use crate::quad::QuadRenderer;
+use crate::textured_quad::TexturedQuadRenderer;
 use crate::Atlas;
 use std::iter;
 use winit::window::Window;
@@ -10,6 +11,7 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     quad_renderer: QuadRenderer,
+    textured_quad_renderer: TexturedQuadRenderer,
     pub window: Window,
 }
 
@@ -71,6 +73,7 @@ impl State {
         surface.configure(&device, &config);
 
         let quad_renderer = QuadRenderer::new(&device, &config.format, size);
+        let textured_quad_renderer = TexturedQuadRenderer::new(&device, &queue, &config.format, size);
 
         Self {
             surface,
@@ -80,6 +83,7 @@ impl State {
             size,
             window,
             quad_renderer,
+            textured_quad_renderer,
         }
     }
 
@@ -94,6 +98,8 @@ impl State {
 
     pub fn update(&mut self) {
         self.quad_renderer
+            .update(self.window.inner_size(), &self.queue);
+        self.textured_quad_renderer
             .update(self.window.inner_size(), &self.queue);
     }
 
@@ -132,6 +138,9 @@ impl State {
 
             self.quad_renderer.prepare(&self.device, &self.queue);
             self.quad_renderer.render(&mut render_pass);
+            self.textured_quad_renderer
+                .prepare(&self.device, &self.queue);
+            self.textured_quad_renderer.render(&mut render_pass);
         }
 
         self.queue.submit(iter::once(encoder.finish()));

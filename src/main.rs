@@ -1,5 +1,7 @@
 mod quad;
 mod renderer;
+mod textured_quad;
+mod texture;
 
 use etagere::*;
 use fontdue::Font;
