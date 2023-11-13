@@ -135,7 +135,7 @@ impl TextRenderer {
 
         for glyph in font.chars() {
             let (metrics, bitmap) = font.rasterize(*glyph.0, font_size);
-            let slot = atlas.allocate(size2(metrics.width as i32, metrics.height as i32));
+            let slot = atlas.allocate(size2(metrics.width as i32 + 1, metrics.height as i32 + 1));
             chars_to_allocs.insert(*glyph.0, slot);
 
             if let Some(rect) = slot {
@@ -369,8 +369,8 @@ impl TextRenderer {
                 char_coords.rectangle.min.y as f32,
             );
             let char_size = (
-                char_coords.rectangle.width() as f32,
-                char_coords.rectangle.height() as f32,
+                char_coords.rectangle.width() as f32 - 1.0,
+                char_coords.rectangle.height() as f32 - 1.0,
             );
 
             let x0 = char_pos.0 / atlas_size.0;
