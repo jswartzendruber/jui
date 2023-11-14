@@ -1,9 +1,6 @@
 struct Vertex {
     @location(0) pos: vec2f,
     @location(1) tex_coords: vec2f,
-}
-
-struct Quad {
     @location(2) origin: vec2f,
     @location(3) size: vec2f,
     @location(4) color: vec4f,
@@ -25,17 +22,17 @@ struct Uniforms {
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
 @vertex
-fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
-    let transformed_coords = vertex.pos * quad.size  + quad.origin;
+fn vs_main(vertex: Vertex) -> FragmentInput {
+    let transformed_coords = vertex.pos * vertex.size  + vertex.origin;
     let scaled_coords = uniforms.window_size.xy * 0.5 * (transformed_coords + vec2f(1.0, 1.0));
 
     var out: FragmentInput;
     out.tex_coords = vertex.tex_coords;
-    out.color = quad.color;
+    out.color = vertex.color;
     out.pos = scaled_coords;
     out.position = vec4f(transformed_coords, 0.0, 1.0);
-    out.origin = quad.origin;
-    out.size = quad.size;
+    out.origin = vertex.origin;
+    out.size = vertex.size;
     return out;
 }
 

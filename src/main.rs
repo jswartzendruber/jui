@@ -9,7 +9,6 @@ use std::io::Write;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::SmolStr,
     window::WindowBuilder,
 };
 
@@ -86,19 +85,6 @@ async fn run_event_loop() {
                     Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                 }
             }
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::KeyboardInput { event, .. } => {
-                    if event.state.is_pressed() {
-                        state.text_renderer.character = event
-                            .text
-                            .unwrap_or(SmolStr::new(" "))
-                            .chars()
-                            .next()
-                            .unwrap_or(' ');
-                    }
-                }
-                _ => {}
-            },
             Event::AboutToWait => {
                 state.window.request_redraw();
             }
