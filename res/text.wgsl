@@ -1,17 +1,13 @@
 struct Vertex {
     @location(0) pos: vec2f,
     @location(1) tex_coords: vec2f,
-    @location(2) origin: vec2f,
-    @location(3) size: vec2f,
-    @location(4) color: vec4f,
+    @location(2) color: vec4f,
 }
 
 struct FragmentInput {
     @builtin(position) position: vec4f,
-    @location(0) origin: vec2f,
-    @location(1) size: vec2f,
-    @location(2) color: vec4f,
-    @location(3) tex_coords: vec2f,
+    @location(0) color: vec4f,
+    @location(1) tex_coords: vec2f,
 }
 
 struct Uniforms {
@@ -30,15 +26,11 @@ fn vs_main(vertex: Vertex) -> FragmentInput {
     );
 
     let transform = projection * vec4f(vertex.pos, 0.0, 1.0);
-    let pos = transform.xy;
-    let tex = vertex.tex_coords;
 
     var out: FragmentInput;
-    out.tex_coords = tex;
+    out.position = vec4f(transform.xy, 0.0, 1.0);
+    out.tex_coords = vertex.tex_coords;
     out.color = vertex.color;
-    out.position = vec4f(pos, 0.0, 1.0);
-    out.origin = vertex.origin;
-    out.size = vertex.size;
     return out;
 }
 
@@ -52,7 +44,5 @@ fn rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f) -> f32 {
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
-    //return vec4f(1.0, 1.0, 1.0, 1.0);
-    let sampled = vec4f(1.0, 1.0, 1.0, textureSample(t_diffuse, s_diffuse, in.tex_coords).r);
-    return in.color * sampled;
+    return vec4f(in.color.xyz, textureSample(t_diffuse, s_diffuse, in.tex_coords).a);
 }
