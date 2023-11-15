@@ -4,7 +4,8 @@ use fontdue::Font;
 use image::{Rgba, RgbaImage};
 use std::collections::HashMap;
 use wgpu::{
-    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat, BufferDescriptor,
+    util::DeviceExt, BindGroup, Buffer, BufferDescriptor, Device, Queue, RenderPass,
+    RenderPipeline, TextureFormat,
 };
 use winit::dpi::PhysicalSize;
 
@@ -139,15 +140,15 @@ impl TextRenderer {
         }
     }
 
-    fn gen_atlas() -> Atlas {
+    fn gen_atlas(font_size: f32) -> Atlas {
         let font = include_bytes!("../res/Roboto-Regular.ttf") as &[u8];
         let settings = fontdue::FontSettings {
-            scale: 72.0,
+            scale: font_size,
             ..fontdue::FontSettings::default()
         };
         let font = fontdue::Font::from_bytes(font, settings).unwrap();
 
-        Self::generate_img_atlas(&font, 72.0)
+        Self::generate_img_atlas(&font, font_size)
     }
 
     pub fn new(
@@ -156,7 +157,7 @@ impl TextRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let atlas = Self::gen_atlas();
+        let atlas = Self::gen_atlas(72.0);
         let img = image::DynamicImage::ImageRgba8(atlas.atlas_image.clone());
         let image_texture = Texture::from_image(device, queue, &img, Some("Atlas image")).unwrap();
 
@@ -278,7 +279,7 @@ impl TextRenderer {
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: true,
+                alpha_to_coverage_enabled: false,
             },
             multiview: None,
         });
@@ -334,10 +335,7 @@ impl TextRenderer {
                 let atlas_size = (self.atlas.atlas_size_x, self.atlas.atlas_size_y);
                 let char_pos = (atlas_char.bottom_left.0, atlas_char.bottom_left.1);
                 // Each atlas character is padded 1 pixel in width and height.
-                let char_size = (
-                    atlas_char.size.0 as f32 - 1.0,
-                    atlas_char.size.1 as f32 - 1.0,
-                );
+                let char_size = (atlas_char.size.0 - 1.0, atlas_char.size.1 - 1.0);
 
                 let xpos = x_start + atlas_char.pos.0;
                 let ypos = y_start + atlas_char.pos.1;
@@ -353,10 +351,10 @@ impl TextRenderer {
                 let y0 = char_pos.1 / atlas_size.1;
 
                 let start = 4 * glyphs_added;
-                self.indices.push(start + 0);
+                self.indices.push(start);
                 self.indices.push(start + 1);
                 self.indices.push(start + 2);
-                self.indices.push(start + 0);
+                self.indices.push(start);
                 self.indices.push(start + 2);
                 self.indices.push(start + 3);
 
@@ -397,6 +395,6 @@ impl TextRenderer {
         rpass.set_bind_group(1, &self.texture_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        rpass.draw_indexed(0..self.indices.len() as u32, 0, 0..1 as u32);
+        rpass.draw_indexed(0..self.indices.len() as u32, 0, 0..1_u32);
     }
 }

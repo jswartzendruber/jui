@@ -34,15 +34,10 @@ fn vs_main(vertex: Vertex) -> FragmentInput {
     return out;
 }
 
-fn rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f) -> f32 {
-    let d = abs(frag_pos - rect_center) - size;
-    return length(max(d, vec2f(0.0, 0.0))) + min(max(d.x, d.y), 0.0);
-}
-
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
-    return vec4f(in.color.xyz, textureSample(t_diffuse, s_diffuse, in.tex_coords).a);
+    return vec4f(in.color.rgb, textureSample(t_diffuse, s_diffuse, in.tex_coords).a);
 }
