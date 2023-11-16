@@ -7,13 +7,13 @@ use winit::window::Window;
 pub struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: Window,
 
     quad_renderer: QuadRenderer,
-    textured_quad_renderer: TexturedQuadRenderer,
+    pub textured_quad_renderer: TexturedQuadRenderer,
     pub text_renderer: TextRenderer,
 }
 
@@ -75,9 +75,11 @@ impl State {
         surface.configure(&device, &config);
 
         let quad_renderer = QuadRenderer::new(&device, &config.format, size);
+
+        let text_renderer = TextRenderer::new(&device, &queue, &config.format, size);
+
         let textured_quad_renderer =
             TexturedQuadRenderer::new(&device, &queue, &config.format, size);
-        let text_renderer = TextRenderer::new(&device, &queue, &config.format, size);
 
         Self {
             surface,

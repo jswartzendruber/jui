@@ -9,7 +9,7 @@ use std::io::Write;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::WindowBuilder, keyboard::SmolStr,
 };
 
 fn init_env_logger() {
@@ -56,21 +56,21 @@ async fn run_event_loop() {
         .run(move |event, elwt| match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
-                window_id: _,
+                ..
             } => {
                 log::info!("Closing window.");
                 elwt.exit();
             }
             Event::WindowEvent {
                 event: WindowEvent::Resized(size),
-                window_id: _,
+                ..
             } => {
                 log::info!("Resizing window.");
                 state.resize(size);
             }
             Event::WindowEvent {
                 event: WindowEvent::RedrawRequested,
-                window_id: _,
+                ..
             } => {
                 state.update();
                 match state.render() {
@@ -85,6 +85,14 @@ async fn run_event_loop() {
                     Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                 }
             }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::KeyboardInput { event, .. } => {
+                    let c = event.text.unwrap_or(SmolStr::new("a")).chars().next().unwrap_or('a');
+
+                    state.text_renderer.cache_char(c, &state.queue);
+                }
+                _ => {}
+            },
             Event::AboutToWait => {
                 state.window.request_redraw();
             }

@@ -201,7 +201,7 @@ impl QuadRenderer {
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: true,
+                alpha_to_coverage_enabled: false,
             },
             multiview: None,
         });
@@ -219,22 +219,22 @@ impl QuadRenderer {
         let num_indices = INDICES.len() as u32;
 
         let instances = vec![
-            Quad {
-                origin: [0.0, 0.0],
-                size: [0.2, 0.05],
-                color: [0.0, 0.0, 0.0, 1.0],
-                radius: 0.04,
-                border: -0.0025,
-                border_color: [0.0, 0.7, 0.8, 1.0],
-            },
-            Quad {
-                origin: [-0.6, -0.1],
-                size: [0.2, 0.05],
-                color: [0.0, 0.0, 0.0, 1.0],
-                radius: 0.0,
-                border: -0.0025,
-                border_color: [0.0, 0.7, 0.8, 1.0],
-            },
+            // Quad {
+            //     origin: [0.0, 0.0],
+            //     size: [0.2, 0.05],
+            //     color: [0.0, 0.0, 0.0, 1.0],
+            //     radius: 0.04,
+            //     border: -0.0025,
+            //     border_color: [0.0, 0.7, 0.8, 1.0],
+            // },
+            // Quad {
+            //     origin: [-0.6, -0.1],
+            //     size: [0.2, 0.05],
+            //     color: [0.0, 0.0, 0.0, 1.0],
+            //     radius: 0.0,
+            //     border: -0.0025,
+            //     border_color: [0.0, 0.7, 0.8, 1.0],
+            // },
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),

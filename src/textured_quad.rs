@@ -134,8 +134,7 @@ impl TexturedQuadRenderer {
             .unwrap()
             .decode()
             .unwrap();
-        let image_texture =
-            Texture::from_image(device, queue, &img, Some("Dirt block image")).unwrap();
+        let texture = Texture::from_image(device, queue, &img, Some("Dirt block image")).unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -164,11 +163,11 @@ impl TexturedQuadRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&image_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&image_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
                 },
             ],
             label: Some("texture_bind_group"),
@@ -255,7 +254,7 @@ impl TexturedQuadRenderer {
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: true,
+                alpha_to_coverage_enabled: false,
             },
             multiview: None,
         });
@@ -273,20 +272,20 @@ impl TexturedQuadRenderer {
         let num_indices = INDICES.len() as u32;
 
         let instances = vec![
-            Quad {
-                origin: [0.3, 0.35],
-                size: [0.2, 0.2],
-                radius: 0.0,
-                border: -0.0035,
-                border_color: [1.0, 1.0, 1.0, 1.0],
-            },
-            Quad {
-                origin: [-0.3, 0.3],
-                size: [0.15, 0.2],
-                radius: 0.1,
-                border: -0.0125,
-                border_color: [0.9, 0.2, 0.3, 1.0],
-            },
+            // Quad {
+            //     origin: [0.3, 0.35],
+            //     size: [0.2, 0.2],
+            //     radius: 0.0,
+            //     border: -0.0035,
+            //     border_color: [1.0, 1.0, 1.0, 1.0],
+            // },
+            // Quad {
+            //     origin: [-0.3, 0.3],
+            //     size: [0.15, 0.2],
+            //     radius: 0.1,
+            //     border: -0.0125,
+            //     border_color: [0.9, 0.2, 0.3, 1.0],
+            // },
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),

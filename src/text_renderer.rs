@@ -1,27 +1,28 @@
 use crate::texture::Texture;
 use etagere::*;
 use fontdue::Font;
-use image::{Rgba, RgbaImage};
-use std::collections::HashMap;
+use image::{DynamicImage, GenericImage, Rgba, RgbaImage};
+use lru::LruCache;
 use wgpu::{
     util::DeviceExt, BindGroup, Buffer, BufferDescriptor, Device, Queue, RenderPass,
     RenderPipeline, TextureFormat,
 };
 use winit::dpi::PhysicalSize;
 
-struct Atlas {
-    atlas_size_x: f32,
-    atlas_size_y: f32,
-    atlas_image: RgbaImage,
-    allocator_map: HashMap<char, AtlasChar>,
+// TODO: performs poorly when full, error or something
+pub struct Atlas {
+    size: f32,
+    pub atlas_image: DynamicImage,
+    allocations: LruCache<char, AtlasChar>,
+    allocator: AtlasAllocator,
+    pub is_dirty: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AtlasChar {
     x_advance: f32,
     y_advance: f32,
-    bottom_left: (f32, f32),
-    size: (f32, f32),
+    alloc: Allocation,
     pos: (f32, f32),
 }
 
@@ -86,69 +87,123 @@ pub struct TextRenderer {
 
     texture_bind_group: BindGroup,
 
-    atlas: Atlas,
+    pub atlas: Atlas,
+    pub atlas_texture: Texture,
+
+    font: Font,
+    font_size: f32,
 }
 
 impl TextRenderer {
-    fn generate_img_atlas(font: &Font, font_size: f32) -> Atlas {
-        let atlas_size_x = 2048.0;
-        let atlas_size_y = 2048.0;
-        let mut atlas = AtlasAllocator::new(size2(atlas_size_x as i32, atlas_size_y as i32));
-        let mut img =
-            RgbaImage::from_pixel(atlas_size_x as u32, atlas_size_y as u32, Rgba([0, 0, 0, 0]));
-        let mut chars_to_allocs = HashMap::new();
-
-        for glyph in font.chars() {
-            let (metrics, bitmap) = font.rasterize(*glyph.0, font_size);
-            if metrics.width > 0 && metrics.height > 0 {
-                let slot =
-                    atlas.allocate(size2(metrics.width as i32 + 1, metrics.height as i32 + 1));
-
-                if let Some(rect) = slot {
-                    let rect = rect.rectangle;
-                    chars_to_allocs.insert(
-                        *glyph.0,
-                        AtlasChar {
-                            x_advance: metrics.advance_width,
-                            y_advance: metrics.advance_height,
-                            bottom_left: (rect.min.x as f32, rect.min.y as f32),
-                            size: (rect.width() as f32, rect.height() as f32),
-                            pos: (metrics.xmin as f32, metrics.ymin as f32),
-                        },
-                    );
-
-                    let mut img_y = rect.min.y;
-                    for y in 0..metrics.height {
-                        let mut img_x = rect.min.x;
-                        for x in 0..metrics.width {
-                            let r = bitmap[x + y * metrics.width];
-
-                            img.put_pixel(img_x as u32, img_y as u32, Rgba([r, r, r, r]));
-                            img_x += 1;
-                        }
-                        img_y += 1;
-                    }
-                }
-            }
+    pub fn cache_char(&mut self, c: char, queue: &Queue) {
+        if let Some(_) = self.atlas.allocations.get(&c) {
+            return;
         }
 
-        Atlas {
-            atlas_image: img,
-            allocator_map: chars_to_allocs,
-            atlas_size_x,
-            atlas_size_y,
+        if c.is_whitespace() {
+            return;
+        }
+
+        self.atlas.is_dirty = true;
+        let (metrics, bitmap) = self.font.rasterize(c, self.font_size);
+
+        let new_glyph_size = size2(metrics.width as i32 + 1, metrics.height as i32 + 1);
+
+        // Evict characters until we can place the new one
+        loop {
+            if let Some(alloc) = self.atlas.allocator.allocate(new_glyph_size) {
+                println!("caching '{}'", c);
+                let atlas_char = AtlasChar {
+                    x_advance: metrics.advance_width,
+                    y_advance: metrics.advance_height,
+                    alloc,
+                    pos: (metrics.xmin as f32, metrics.ymin as f32),
+                };
+                let xmin = atlas_char.alloc.rectangle.min.x;
+                let ymin = atlas_char.alloc.rectangle.min.y;
+
+                println!("{:?} {:?}", bitmap.len() / metrics.width, metrics.width);
+
+                let mut img = RgbaImage::new(metrics.width as u32, metrics.height as u32);
+                for x in 0..metrics.width {
+                    for y in 0..metrics.height {
+                        img.put_pixel(
+                            x as u32,
+                            y as u32,
+                            Rgba([
+                                bitmap[x + y * metrics.width],
+                                bitmap[x + y * metrics.width],
+                                bitmap[x + y * metrics.width],
+                                bitmap[x + y * metrics.width],
+                            ]),
+                        );
+                    }
+                }
+
+                // why no worky
+                queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        aspect: wgpu::TextureAspect::All,
+                        texture: &self.atlas_texture.texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: xmin as u32,
+                            y: ymin as u32,
+                            z: 0,
+                        },
+                    },
+                    &img,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * metrics.width as u32),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: img.width() as u32,
+                        height: img.height() as u32,
+                        depth_or_array_layers: 1,
+                    },
+                );
+
+                self.atlas.allocations.put(c, atlas_char);
+
+                let mut img_y = alloc.rectangle.min.y;
+                for y in 0..metrics.height {
+                    let mut img_x = alloc.rectangle.min.x;
+                    for x in 0..metrics.width {
+                        let r = bitmap[x + y * metrics.width];
+
+                        self.atlas.atlas_image.put_pixel(
+                            img_x as u32,
+                            img_y as u32,
+                            Rgba([r, r, r, r]),
+                        );
+                        img_x += 1;
+                    }
+                    img_y += 1;
+                }
+
+                return;
+            } else {
+                let lru = self.atlas.allocations.pop_lru().unwrap();
+                self.atlas.allocator.deallocate(lru.1.alloc.id);
+                println!("evicting '{}'", lru.0);
+            }
         }
     }
 
-    fn gen_atlas(font_size: f32) -> Atlas {
-        let font = include_bytes!("../res/Roboto-Regular.ttf") as &[u8];
-        let settings = fontdue::FontSettings {
-            scale: font_size,
-            ..fontdue::FontSettings::default()
-        };
-        let font = fontdue::Font::from_bytes(font, settings).unwrap();
+    fn generate_img_atlas(size: f32) -> Atlas {
+        let allocator = AtlasAllocator::new(size2(size as i32, size as i32));
+        let img = RgbaImage::from_pixel(size as u32, size as u32, Rgba([0, 0, 0, 0]));
 
-        Self::generate_img_atlas(&font, font_size)
+        Atlas {
+            atlas_image: DynamicImage::ImageRgba8(img),
+            // TODO: probaby shouldn't be unbounded
+            allocations: LruCache::unbounded(),
+            size,
+            allocator,
+            is_dirty: false,
+        }
     }
 
     pub fn new(
@@ -157,9 +212,17 @@ impl TextRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let atlas = Self::gen_atlas(72.0);
-        let img = image::DynamicImage::ImageRgba8(atlas.atlas_image.clone());
-        let image_texture = Texture::from_image(device, queue, &img, Some("Atlas image")).unwrap();
+        let font = include_bytes!("../res/JetBrainsMono-Regular.ttf") as &[u8];
+        let font_size = 48.0;
+        let settings = fontdue::FontSettings {
+            scale: font_size,
+            ..fontdue::FontSettings::default()
+        };
+        let font = fontdue::Font::from_bytes(font, settings).unwrap();
+
+        let atlas = Self::generate_img_atlas(1024.0);
+        let atlas_texture =
+            Texture::from_image(device, queue, &atlas.atlas_image, Some("Atlas image")).unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -188,11 +251,11 @@ impl TextRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&image_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&atlas_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&image_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&atlas_texture.sampler),
                 },
             ],
             label: Some("texture_bind_group"),
@@ -313,6 +376,10 @@ impl TextRenderer {
             texture_bind_group,
 
             atlas,
+            atlas_texture,
+
+            font,
+            font_size,
         }
     }
 
@@ -320,7 +387,7 @@ impl TextRenderer {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-        let text = "hello worldy";
+        let text = "abcdefghijklmnopqrs";
 
         self.indices = vec![];
         self.vertices = vec![];
@@ -330,25 +397,30 @@ impl TextRenderer {
 
         let mut glyphs_added = 0;
         for c in text.chars() {
-            let character_coordinates = self.atlas.allocator_map.get(&c);
-            if let Some(atlas_char) = character_coordinates {
-                let atlas_size = (self.atlas.atlas_size_x, self.atlas.atlas_size_y);
-                let char_pos = (atlas_char.bottom_left.0, atlas_char.bottom_left.1);
-                // Each atlas character is padded 1 pixel in width and height.
-                let char_size = (atlas_char.size.0 - 1.0, atlas_char.size.1 - 1.0);
+            self.cache_char(c, queue);
+            let char_coords = self.atlas.allocations.get(&c);
 
-                let xpos = x_start + atlas_char.pos.0;
-                let ypos = y_start + atlas_char.pos.1;
+            if let Some(char_coords) = char_coords {
+                let alloc_rect = char_coords.alloc.rectangle;
+                let char_pos = (alloc_rect.min.x as f32, alloc_rect.min.y as f32);
+                // Each atlas character is padded 1 pixel in width and height.
+                let char_size = (
+                    alloc_rect.width() as f32 - 1.0,
+                    alloc_rect.height() as f32 - 1.0,
+                );
+
+                let xpos = x_start + char_coords.pos.0;
+                let ypos = y_start + char_coords.pos.1;
                 let w = char_size.0;
                 let h = char_size.1;
 
-                x_start += atlas_char.x_advance;
-                y_start += atlas_char.y_advance;
+                x_start += char_coords.x_advance;
+                y_start += char_coords.y_advance;
 
-                let x0 = char_pos.0 / atlas_size.0;
-                let x1 = (char_pos.0 + char_size.0) / atlas_size.0;
-                let y1 = (char_pos.1 + char_size.1) / atlas_size.1;
-                let y0 = char_pos.1 / atlas_size.1;
+                let x0 = char_pos.0 / self.atlas.size;
+                let x1 = (char_pos.0 + char_size.0) / self.atlas.size;
+                let y1 = (char_pos.1 + char_size.1) / self.atlas.size;
+                let y0 = char_pos.1 / self.atlas.size;
 
                 let start = 4 * glyphs_added;
                 self.indices.push(start);
