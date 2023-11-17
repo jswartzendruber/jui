@@ -96,7 +96,7 @@ pub struct TextRenderer {
 
 impl TextRenderer {
     pub fn cache_char(&mut self, c: char, queue: &Queue) {
-        if let Some(_) = self.atlas.allocations.get(&c) {
+        if self.atlas.allocations.get(&c).is_some() {
             return;
         }
 
@@ -159,8 +159,8 @@ impl TextRenderer {
                         rows_per_image: None,
                     },
                     wgpu::Extent3d {
-                        width: img.width() as u32,
-                        height: img.height() as u32,
+                        width: img.width(),
+                        height: img.height(),
                         depth_or_array_layers: 1,
                     },
                 );
@@ -222,7 +222,7 @@ impl TextRenderer {
 
         let atlas = Self::generate_img_atlas(1024.0);
         let atlas_texture =
-            Texture::from_image(device, queue, &atlas.atlas_image, Some("Atlas image")).unwrap();
+            Texture::from_image(device, queue, &atlas.atlas_image, Some("Atlas image"));
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

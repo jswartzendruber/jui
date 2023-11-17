@@ -130,11 +130,11 @@ impl TexturedQuadRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let img = image::io::Reader::open("res/test_img.jpg")
+        let img = image::io::Reader::open("res/test_img.png")
             .unwrap()
             .decode()
             .unwrap();
-        let texture = Texture::from_image(device, queue, &img, Some("Dirt block image")).unwrap();
+        let texture = Texture::from_image(device, queue, &img, Some("Dirt block image"));
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

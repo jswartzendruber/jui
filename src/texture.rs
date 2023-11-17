@@ -1,4 +1,3 @@
-use anyhow::*;
 use image::GenericImageView;
 
 pub struct Texture {
@@ -13,7 +12,7 @@ impl Texture {
         queue: &wgpu::Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
-    ) -> Result<Self> {
+    ) -> Texture {
         let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
 
@@ -61,10 +60,10 @@ impl Texture {
             ..Default::default()
         });
 
-        Ok(Self {
+        Self {
             texture,
             view,
             sampler,
-        })
+        }
     }
 }
