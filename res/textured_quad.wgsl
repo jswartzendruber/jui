@@ -28,9 +28,19 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
+// Coordinates are converted from screen space [0,0], [800,600] where 0,0 is the
+// bottom left corner of the screen, to opengl space [-1,1].
+fn to_ndc(p: vec2f) -> vec2f {
+    return vec2f(
+        ((2.0 * p.x) / uniforms.window_size.x) - 1.0,
+        ((2.0 * p.y) / uniforms.window_size.y) - 1.0,
+    );
+}
+
 @vertex
 fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
-    let transformed_coords = vertex.pos * quad.size  + quad.origin;
+    let ndc_origin = to_ndc(quad.origin);
+    let transformed_coords = vertex.pos * quad.size + ndc_origin;
     let scaled_coords = uniforms.window_size.xy * 0.5 * (transformed_coords + vec2f(1.0, 1.0));
 
     var out: FragmentInput;
@@ -39,7 +49,7 @@ fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
     out.border_color = quad.border_color;
     out.pos = scaled_coords;
     out.position = vec4f(transformed_coords, 0.0, 1.0);
-    out.origin = quad.origin;
+    out.origin = ndc_origin;
     out.size = quad.size;
     out.radius = quad.radius;
     return out;

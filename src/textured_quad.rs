@@ -272,20 +272,20 @@ impl TexturedQuadRenderer {
         let num_indices = INDICES.len() as u32;
 
         let instances = vec![
-            // Quad {
-            //     origin: [0.3, 0.35],
-            //     size: [0.2, 0.2],
-            //     radius: 0.0,
-            //     border: -0.0035,
-            //     border_color: [1.0, 1.0, 1.0, 1.0],
-            // },
-            // Quad {
-            //     origin: [-0.3, 0.3],
-            //     size: [0.15, 0.2],
-            //     radius: 0.1,
-            //     border: -0.0125,
-            //     border_color: [0.9, 0.2, 0.3, 1.0],
-            // },
+            Quad {
+                origin: [500.0, 400.0],
+                size: [0.2, 0.2],
+                radius: 0.0,
+                border: -0.0035,
+                border_color: [1.0, 1.0, 1.0, 1.0],
+            },
+            Quad {
+                origin: [600.0, 200.0],
+                size: [0.15, 0.2],
+                radius: 0.1,
+                border: -0.0125,
+                border_color: [0.9, 0.2, 0.3, 1.0],
+            },
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
