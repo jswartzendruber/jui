@@ -371,18 +371,16 @@ impl TextRenderer {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-        self.start_text_batch();
-        self.add_string_to_batch("hello world!", queue, 400.0, 300.0);
+        // self.add_string_to_batch("hello world!", queue, 400.0, 300.0);
         // self.add_string_to_batch("bottom text.", queue, 400.0, 300.0 - self.font_size as f32);
-        self.end_text_batch(queue);
     }
 
-    fn start_text_batch(&mut self) {
+    pub fn start_text_batch(&mut self) {
         self.indices = vec![];
         self.vertices = vec![];
     }
 
-    fn end_text_batch(&mut self, queue: &Queue) {
+    pub fn end_text_batch(&mut self, queue: &Queue) {
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
         queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
     }
