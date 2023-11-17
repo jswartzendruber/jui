@@ -1,6 +1,6 @@
 use crate::texture::Texture;
 use etagere::*;
-use fontdue::Font;
+use freetype::{face::LoadFlag, Face};
 use image::{DynamicImage, Rgba, RgbaImage};
 use lru::LruCache;
 use wgpu::{
@@ -89,8 +89,9 @@ pub struct TextRenderer {
     pub atlas: Atlas,
     pub atlas_texture: Texture,
 
-    font: Font,
-    font_size: f32,
+    freetype: freetype::Library,
+    font_size: isize,
+    face: Face,
 }
 
 impl TextRenderer {
@@ -103,36 +104,50 @@ impl TextRenderer {
             return;
         }
 
-        self.atlas.is_dirty = true;
-        let (metrics, bitmap) = self.font.rasterize(c, self.font_size);
+        self.face.load_char(c as usize, LoadFlag::RENDER).unwrap();
+        let glyph = self.face.glyph();
 
         // Pad allocation 1 pixel on each side to avoid bleeding
-        let new_glyph_size = size2(metrics.width as i32 + 2, metrics.height as i32 + 2);
+        let new_glyph_size = size2(
+            glyph.bitmap().width() as i32 + 2,
+            glyph.bitmap().rows() as i32 + 2,
+        );
 
         // Evict characters until we can place the new one
         loop {
             if let Some(alloc) = self.atlas.allocator.allocate(new_glyph_size) {
                 let atlas_char = AtlasChar {
-                    advance: (metrics.advance_width, metrics.advance_height),
-                    size: (metrics.width as f32, metrics.height as f32),
-                    pos: (metrics.xmin as f32, metrics.ymin as f32),
+                    advance: (
+                        glyph.advance().x as f32 / 64.0,
+                        glyph.advance().y as f32 / 64.0,
+                    ),
+                    size: (glyph.bitmap().width() as f32, glyph.bitmap().rows() as f32),
+                    pos: (
+                        glyph.bitmap_left() as f32,
+                        glyph.bitmap_top() as f32 - glyph.bitmap().rows() as f32,
+                    ),
                     alloc,
                 };
                 let xmin = atlas_char.alloc.rectangle.min.x;
                 let ymin = atlas_char.alloc.rectangle.min.y;
 
                 let mut img = RgbaImage::from_pixel(
-                    metrics.width as u32 + 2,
-                    metrics.height as u32 + 2,
+                    glyph.bitmap().width() as u32 + 2,
+                    glyph.bitmap().rows() as u32 + 2,
                     Rgba([0, 0, 0, 0]),
                 );
 
-                for x in 0..metrics.width {
-                    for y in 0..metrics.height {
+                for x in 0..glyph.bitmap().width() {
+                    for y in 0..glyph.bitmap().rows() {
                         img.put_pixel(
                             x as u32 + 1,
                             y as u32 + 1,
-                            Rgba([255, 255, 255, bitmap[x + y * metrics.width]]),
+                            Rgba([
+                                255,
+                                255,
+                                255,
+                                glyph.bitmap().buffer()[(x + y * glyph.bitmap().width()) as usize],
+                            ]),
                         );
                     }
                 }
@@ -151,7 +166,7 @@ impl TextRenderer {
                     &img,
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: Some(4 * (metrics.width + 2) as u32),
+                        bytes_per_row: Some(4 * (glyph.bitmap().width() + 2) as u32),
                         rows_per_image: None,
                     },
                     wgpu::Extent3d {
@@ -189,13 +204,10 @@ impl TextRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let font = include_bytes!("../res/Roboto-Regular.ttf") as &[u8];
-        let font_size = 48.0;
-        let settings = fontdue::FontSettings {
-            scale: font_size,
-            ..fontdue::FontSettings::default()
-        };
-        let font = fontdue::Font::from_bytes(font, settings).unwrap();
+        let font_size = 48;
+        let lib = freetype::Library::init().unwrap();
+        let face = lib.new_face("res/Roboto-Regular.ttf", 0).unwrap();
+        face.set_char_size(font_size * 64, 0, 0, 0).unwrap();
 
         let atlas = Self::generate_img_atlas(192.0);
         let atlas_texture =
@@ -355,8 +367,9 @@ impl TextRenderer {
             atlas,
             atlas_texture,
 
-            font,
+            freetype: lib,
             font_size,
+            face,
         }
     }
 
