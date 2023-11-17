@@ -39,5 +39,6 @@ fn vs_main(vertex: Vertex) -> FragmentInput {
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
+    //return vec4f(1.0, 1.0, 1.0, 1.0);
     return vec4f(in.color.rgb, textureSample(t_diffuse, s_diffuse, in.tex_coords).a);
 }

@@ -1,7 +1,7 @@
 use crate::texture::Texture;
 use etagere::*;
 use fontdue::Font;
-use image::{DynamicImage, GenericImage, Rgba, RgbaImage};
+use image::{DynamicImage, Rgba, RgbaImage};
 use lru::LruCache;
 use wgpu::{
     util::DeviceExt, BindGroup, Buffer, BufferDescriptor, Device, Queue, RenderPass,
@@ -9,7 +9,6 @@ use wgpu::{
 };
 use winit::dpi::PhysicalSize;
 
-// TODO: performs poorly when full, error or something
 pub struct Atlas {
     size: f32,
     pub atlas_image: DynamicImage,
@@ -20,10 +19,10 @@ pub struct Atlas {
 
 #[derive(Debug, Clone)]
 struct AtlasChar {
-    x_advance: f32,
-    y_advance: f32,
-    alloc: Allocation,
+    advance: (f32, f32),
     pos: (f32, f32),
+    size: (f32, f32),
+    alloc: Allocation,
 }
 
 #[repr(C)]
@@ -107,40 +106,37 @@ impl TextRenderer {
         self.atlas.is_dirty = true;
         let (metrics, bitmap) = self.font.rasterize(c, self.font_size);
 
-        let new_glyph_size = size2(metrics.width as i32 + 1, metrics.height as i32 + 1);
+        // Pad allocation 1 pixel on each side to avoid bleeding
+        let new_glyph_size = size2(metrics.width as i32 + 2, metrics.height as i32 + 2);
 
         // Evict characters until we can place the new one
         loop {
             if let Some(alloc) = self.atlas.allocator.allocate(new_glyph_size) {
-                println!("caching '{}'", c);
                 let atlas_char = AtlasChar {
-                    x_advance: metrics.advance_width,
-                    y_advance: metrics.advance_height,
-                    alloc,
+                    advance: (metrics.advance_width, metrics.advance_height),
+                    size: (metrics.width as f32, metrics.height as f32),
                     pos: (metrics.xmin as f32, metrics.ymin as f32),
+                    alloc,
                 };
                 let xmin = atlas_char.alloc.rectangle.min.x;
                 let ymin = atlas_char.alloc.rectangle.min.y;
 
-                println!("{:?} {:?}", bitmap.len() / metrics.width, metrics.width);
+                let mut img = RgbaImage::from_pixel(
+                    metrics.width as u32 + 2,
+                    metrics.height as u32 + 2,
+                    Rgba([0, 0, 0, 0]),
+                );
 
-                let mut img = RgbaImage::new(metrics.width as u32, metrics.height as u32);
                 for x in 0..metrics.width {
                     for y in 0..metrics.height {
                         img.put_pixel(
-                            x as u32,
-                            y as u32,
-                            Rgba([
-                                bitmap[x + y * metrics.width],
-                                bitmap[x + y * metrics.width],
-                                bitmap[x + y * metrics.width],
-                                bitmap[x + y * metrics.width],
-                            ]),
+                            x as u32 + 1,
+                            y as u32 + 1,
+                            Rgba([255, 255, 255, bitmap[x + y * metrics.width]]),
                         );
                     }
                 }
 
-                // why no worky
                 queue.write_texture(
                     wgpu::ImageCopyTexture {
                         aspect: wgpu::TextureAspect::All,
@@ -155,7 +151,7 @@ impl TextRenderer {
                     &img,
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: Some(4 * metrics.width as u32),
+                        bytes_per_row: Some(4 * (metrics.width + 2) as u32),
                         rows_per_image: None,
                     },
                     wgpu::Extent3d {
@@ -166,39 +162,20 @@ impl TextRenderer {
                 );
 
                 self.atlas.allocations.put(c, atlas_char);
-
-                let mut img_y = alloc.rectangle.min.y;
-                for y in 0..metrics.height {
-                    let mut img_x = alloc.rectangle.min.x;
-                    for x in 0..metrics.width {
-                        let r = bitmap[x + y * metrics.width];
-
-                        self.atlas.atlas_image.put_pixel(
-                            img_x as u32,
-                            img_y as u32,
-                            Rgba([r, r, r, r]),
-                        );
-                        img_x += 1;
-                    }
-                    img_y += 1;
-                }
-
                 return;
             } else {
                 let lru = self.atlas.allocations.pop_lru().unwrap();
                 self.atlas.allocator.deallocate(lru.1.alloc.id);
-                println!("evicting '{}'", lru.0);
             }
         }
     }
 
     fn generate_img_atlas(size: f32) -> Atlas {
         let allocator = AtlasAllocator::new(size2(size as i32, size as i32));
-        let img = RgbaImage::from_pixel(size as u32, size as u32, Rgba([0, 0, 0, 0]));
+        let img = RgbaImage::from_pixel(size as u32, size as u32, Rgba([0, 0, 0, 255]));
 
         Atlas {
             atlas_image: DynamicImage::ImageRgba8(img),
-            // TODO: probaby shouldn't be unbounded
             allocations: LruCache::unbounded(),
             size,
             allocator,
@@ -212,7 +189,7 @@ impl TextRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let font = include_bytes!("../res/JetBrainsMono-Regular.ttf") as &[u8];
+        let font = include_bytes!("../res/Roboto-Regular.ttf") as &[u8];
         let font_size = 48.0;
         let settings = fontdue::FontSettings {
             scale: font_size,
@@ -220,7 +197,7 @@ impl TextRenderer {
         };
         let font = fontdue::Font::from_bytes(font, settings).unwrap();
 
-        let atlas = Self::generate_img_atlas(1024.0);
+        let atlas = Self::generate_img_atlas(192.0);
         let atlas_texture =
             Texture::from_image(device, queue, &atlas.atlas_image, Some("Atlas image"));
 
@@ -387,13 +364,13 @@ impl TextRenderer {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-        let text = "abcdefghijklmnopqrs";
+        let text = "abcdefghijk.mnopqrs";
 
         self.indices = vec![];
         self.vertices = vec![];
 
         let mut x_start = -200.0;
-        let mut y_start = 200.0;
+        let mut y_start = 100.0;
 
         let mut glyphs_added = 0;
         for c in text.chars() {
@@ -402,24 +379,20 @@ impl TextRenderer {
 
             if let Some(char_coords) = char_coords {
                 let alloc_rect = char_coords.alloc.rectangle;
-                let char_pos = (alloc_rect.min.x as f32, alloc_rect.min.y as f32);
-                // Each atlas character is padded 1 pixel in width and height.
-                let char_size = (
-                    alloc_rect.width() as f32 - 1.0,
-                    alloc_rect.height() as f32 - 1.0,
-                );
+                // Undo padding
+                let char_pos = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
 
-                let xpos = x_start + char_coords.pos.0;
-                let ypos = y_start + char_coords.pos.1;
-                let w = char_size.0;
-                let h = char_size.1;
+                let x = x_start + char_coords.pos.0;
+                let y = y_start + char_coords.pos.1;
+                let w = char_coords.size.0;
+                let h = char_coords.size.1;
 
-                x_start += char_coords.x_advance;
-                y_start += char_coords.y_advance;
+                x_start += char_coords.advance.0;
+                y_start += char_coords.advance.1;
 
                 let x0 = char_pos.0 / self.atlas.size;
-                let x1 = (char_pos.0 + char_size.0) / self.atlas.size;
-                let y1 = (char_pos.1 + char_size.1) / self.atlas.size;
+                let x1 = (char_pos.0 + char_coords.size.0) / self.atlas.size;
+                let y1 = (char_pos.1 + char_coords.size.1) / self.atlas.size;
                 let y0 = char_pos.1 / self.atlas.size;
 
                 let start = 4 * glyphs_added;
@@ -431,23 +404,23 @@ impl TextRenderer {
                 self.indices.push(start + 3);
 
                 self.vertices.push(Vertex {
-                    pos: [xpos, ypos + h], // 0
-                    tex_coords: [x0, y0],
-                    color: [1.0, 1.0, 1.0, 1.0],
-                });
-                self.vertices.push(Vertex {
-                    pos: [xpos, ypos], // 1
+                    pos: [x, y], // 0
                     tex_coords: [x0, y1],
                     color: [1.0, 1.0, 1.0, 1.0],
                 });
                 self.vertices.push(Vertex {
-                    pos: [xpos + w, ypos], // 2
+                    pos: [x + w, y], // 1
                     tex_coords: [x1, y1],
                     color: [1.0, 1.0, 1.0, 1.0],
                 });
                 self.vertices.push(Vertex {
-                    pos: [xpos + w, ypos + h], // 3
+                    pos: [x + w, y + h], // 2
                     tex_coords: [x1, y0],
+                    color: [1.0, 1.0, 1.0, 1.0],
+                });
+                self.vertices.push(Vertex {
+                    pos: [x, y + h], // 3
+                    tex_coords: [x0, y0],
                     color: [1.0, 1.0, 1.0, 1.0],
                 });
 
