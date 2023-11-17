@@ -372,8 +372,8 @@ impl TextRenderer {
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
         self.start_text_batch();
-        self.add_string_to_batch("hello world!", queue, 0.0, 600.0);
-        self.add_string_to_batch("bottom text.", queue, 0.0, 600.0 - self.font_size as f32);
+        self.add_string_to_batch("hello world!", queue, 400.0, 300.0);
+        // self.add_string_to_batch("bottom text.", queue, 400.0, 300.0 - self.font_size as f32);
         self.end_text_batch(queue);
     }
 
@@ -388,10 +388,20 @@ impl TextRenderer {
     }
 
     /// Add a string of text for rendering.
-    /// (x, y) is the top left corner of where the string of text will be placed.
+    /// (x, y) is the vertical and horizontal center of where the text will be placed.
     pub fn add_string_to_batch(&mut self, s: &str, queue: &Queue, x: f32, y: f32) {
-        let mut x = x;
-        let mut y = y - self.font_size as f32;
+        // calculate top, fudge it a bit because off center things look more centered
+        let mut y = y - ((self.font_size as f32 * 0.8) / 2.0);
+
+        // calculate left
+        let mut text_len = 0.0;
+        for c in s.chars() {
+            self.cache_char(c, queue);
+            if let Some(glyph) = self.atlas.allocations.get(&c) {
+                text_len += glyph.advance.0;
+            }
+        }
+        let mut x = x - (text_len / 2.0);
 
         for c in s.chars() {
             self.cache_char(c, queue);
@@ -401,25 +411,23 @@ impl TextRenderer {
 
     /// Internal details, you should use add_string_to_batch
     fn add_char_to_batch(&mut self, c: char, x_start: &mut f32, y_start: &mut f32) {
-        let char_coords = self.atlas.allocations.get(&c);
-
-        if let Some(char_coords) = char_coords {
-            let alloc_rect = char_coords.alloc.rectangle;
+        if let Some(glyph) = self.atlas.allocations.get(&c) {
+            let alloc_rect = glyph.alloc.rectangle;
             // Undo padding
-            let char_pos = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
+            let glyph_pos_in_atlas = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
 
-            let x = *x_start + char_coords.pos.0;
-            let y = *y_start + char_coords.pos.1;
-            let w = char_coords.size.0;
-            let h = char_coords.size.1;
+            let x = *x_start + glyph.pos.0;
+            let y = *y_start + glyph.pos.1;
+            let w = glyph.size.0;
+            let h = glyph.size.1;
 
-            *x_start += char_coords.advance.0;
-            *y_start += char_coords.advance.1;
+            *x_start += glyph.advance.0;
+            *y_start += glyph.advance.1;
 
-            let x0 = char_pos.0 / self.atlas.size;
-            let x1 = (char_pos.0 + char_coords.size.0) / self.atlas.size;
-            let y1 = (char_pos.1 + char_coords.size.1) / self.atlas.size;
-            let y0 = char_pos.1 / self.atlas.size;
+            let x0 = glyph_pos_in_atlas.0 / self.atlas.size;
+            let x1 = (glyph_pos_in_atlas.0 + glyph.size.0) / self.atlas.size;
+            let y1 = (glyph_pos_in_atlas.1 + glyph.size.1) / self.atlas.size;
+            let y0 = glyph_pos_in_atlas.1 / self.atlas.size;
 
             let start = (4 * (self.indices.len() / 6)) as u16;
             self.indices.push(start);
