@@ -16,19 +16,21 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
+// Coordinates are converted from screen space [0,0], [800,600] where 0,0 is the
+// bottom left corner of the screen, to opengl space [-1,1].
+fn to_ndc(p: vec2f) -> vec2f {
+    return vec2f(
+        ((2.0 * p.x) / uniforms.window_size.x) - 1.0,
+        ((2.0 * p.y) / uniforms.window_size.y) - 1.0,
+    );
+}
+
 @vertex
 fn vs_main(vertex: Vertex) -> FragmentInput {
-    let projection = mat4x4f(
-        vec4f(2.0/uniforms.window_size.x, 0.0, 0.0, -1.0),
-        vec4f(0.0, 2.0/uniforms.window_size.y, 0.0, -1.0),
-        vec4f(0.0, 0.0, 1.0, -1.0),
-        vec4f(0.0, 0.0, 0.0, 1.0),
-    );
-
-    let transform = projection * vec4f(vertex.pos, 0.0, 1.0);
+    let transform = vec4f(to_ndc(vertex.pos), 0.0, 1.0);
 
     var out: FragmentInput;
-    out.position = vec4f(transform.xy, 0.0, 1.0);
+    out.position = transform;
     out.tex_coords = vertex.tex_coords;
     out.color = vertex.color;
     return out;

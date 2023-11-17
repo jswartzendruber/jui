@@ -89,7 +89,8 @@ pub struct TextRenderer {
     pub atlas: Atlas,
     pub atlas_texture: Texture,
 
-    freetype: freetype::Library,
+    // Hold onto this in case we want to load any new font faces
+    _freetype: freetype::Library,
     font_size: isize,
     face: Face,
 }
@@ -100,18 +101,11 @@ impl TextRenderer {
             return;
         }
 
-        if c.is_whitespace() {
-            return;
-        }
-
         self.face.load_char(c as usize, LoadFlag::RENDER).unwrap();
         let glyph = self.face.glyph();
 
         // Pad allocation 1 pixel on each side to avoid bleeding
-        let new_glyph_size = size2(
-            glyph.bitmap().width() as i32 + 2,
-            glyph.bitmap().rows() as i32 + 2,
-        );
+        let new_glyph_size = size2(glyph.bitmap().width() + 2, glyph.bitmap().rows() + 2);
 
         // Evict characters until we can place the new one
         loop {
@@ -367,7 +361,7 @@ impl TextRenderer {
             atlas,
             atlas_texture,
 
-            freetype: lib,
+            _freetype: lib,
             font_size,
             face,
         }
@@ -377,72 +371,85 @@ impl TextRenderer {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
-        let text = "abcdefghijk.mnopqrs";
+        self.start_text_batch();
+        self.add_string_to_batch("hello world!", queue, 0.0, 600.0);
+        self.add_string_to_batch("bottom text.", queue, 0.0, 600.0 - self.font_size as f32);
+        self.end_text_batch(queue);
+    }
 
+    fn start_text_batch(&mut self) {
         self.indices = vec![];
         self.vertices = vec![];
+    }
 
-        let mut x_start = -200.0;
-        let mut y_start = 100.0;
-
-        let mut glyphs_added = 0;
-        for c in text.chars() {
-            self.cache_char(c, queue);
-            let char_coords = self.atlas.allocations.get(&c);
-
-            if let Some(char_coords) = char_coords {
-                let alloc_rect = char_coords.alloc.rectangle;
-                // Undo padding
-                let char_pos = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
-
-                let x = x_start + char_coords.pos.0;
-                let y = y_start + char_coords.pos.1;
-                let w = char_coords.size.0;
-                let h = char_coords.size.1;
-
-                x_start += char_coords.advance.0;
-                y_start += char_coords.advance.1;
-
-                let x0 = char_pos.0 / self.atlas.size;
-                let x1 = (char_pos.0 + char_coords.size.0) / self.atlas.size;
-                let y1 = (char_pos.1 + char_coords.size.1) / self.atlas.size;
-                let y0 = char_pos.1 / self.atlas.size;
-
-                let start = 4 * glyphs_added;
-                self.indices.push(start);
-                self.indices.push(start + 1);
-                self.indices.push(start + 2);
-                self.indices.push(start);
-                self.indices.push(start + 2);
-                self.indices.push(start + 3);
-
-                self.vertices.push(Vertex {
-                    pos: [x, y], // 0
-                    tex_coords: [x0, y1],
-                    color: [1.0, 1.0, 1.0, 1.0],
-                });
-                self.vertices.push(Vertex {
-                    pos: [x + w, y], // 1
-                    tex_coords: [x1, y1],
-                    color: [1.0, 1.0, 1.0, 1.0],
-                });
-                self.vertices.push(Vertex {
-                    pos: [x + w, y + h], // 2
-                    tex_coords: [x1, y0],
-                    color: [1.0, 1.0, 1.0, 1.0],
-                });
-                self.vertices.push(Vertex {
-                    pos: [x, y + h], // 3
-                    tex_coords: [x0, y0],
-                    color: [1.0, 1.0, 1.0, 1.0],
-                });
-
-                glyphs_added += 1;
-            }
-        }
-
+    fn end_text_batch(&mut self, queue: &Queue) {
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
         queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
+    }
+
+    /// Add a string of text for rendering.
+    /// (x, y) is the top left corner of where the string of text will be placed.
+    pub fn add_string_to_batch(&mut self, s: &str, queue: &Queue, x: f32, y: f32) {
+        let mut x = x;
+        let mut y = y - self.font_size as f32;
+
+        for c in s.chars() {
+            self.cache_char(c, queue);
+            self.add_char_to_batch(c, &mut x, &mut y);
+        }
+    }
+
+    /// Internal details, you should use add_string_to_batch
+    fn add_char_to_batch(&mut self, c: char, x_start: &mut f32, y_start: &mut f32) {
+        let char_coords = self.atlas.allocations.get(&c);
+
+        if let Some(char_coords) = char_coords {
+            let alloc_rect = char_coords.alloc.rectangle;
+            // Undo padding
+            let char_pos = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
+
+            let x = *x_start + char_coords.pos.0;
+            let y = *y_start + char_coords.pos.1;
+            let w = char_coords.size.0;
+            let h = char_coords.size.1;
+
+            *x_start += char_coords.advance.0;
+            *y_start += char_coords.advance.1;
+
+            let x0 = char_pos.0 / self.atlas.size;
+            let x1 = (char_pos.0 + char_coords.size.0) / self.atlas.size;
+            let y1 = (char_pos.1 + char_coords.size.1) / self.atlas.size;
+            let y0 = char_pos.1 / self.atlas.size;
+
+            let start = (4 * (self.indices.len() / 6)) as u16;
+            self.indices.push(start);
+            self.indices.push(start + 1);
+            self.indices.push(start + 2);
+            self.indices.push(start);
+            self.indices.push(start + 2);
+            self.indices.push(start + 3);
+
+            self.vertices.push(Vertex {
+                pos: [x, y], // 0
+                tex_coords: [x0, y1],
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+            self.vertices.push(Vertex {
+                pos: [x + w, y], // 1
+                tex_coords: [x1, y1],
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+            self.vertices.push(Vertex {
+                pos: [x + w, y + h], // 2
+                tex_coords: [x1, y0],
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+            self.vertices.push(Vertex {
+                pos: [x, y + h], // 3
+                tex_coords: [x0, y0],
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+        }
     }
 
     pub fn prepare(&mut self, _device: &Device, _queue: &Queue) {}
