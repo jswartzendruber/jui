@@ -12,7 +12,7 @@ pub struct State {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: Window,
 
-    quad_renderer: QuadRenderer,
+    pub quad_renderer: QuadRenderer,
     pub textured_quad_renderer: TexturedQuadRenderer,
     pub text_renderer: TextRenderer,
 }
@@ -104,6 +104,12 @@ impl State {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.quad_renderer.clear();
+        self.textured_quad_renderer.clear();
+        self.text_renderer.clear();
+    }
+
     pub fn update(&mut self) {
         let window_size = self.window.inner_size();
 
@@ -140,14 +146,8 @@ impl State {
                 occlusion_query_set: None,
             });
 
-            self.quad_renderer.prepare(&self.device, &self.queue);
             self.quad_renderer.render(&mut render_pass);
-
-            self.textured_quad_renderer
-                .prepare(&self.device, &self.queue);
             self.textured_quad_renderer.render(&mut render_pass);
-
-            self.text_renderer.prepare(&self.device, &self.queue);
             self.text_renderer.render(&mut render_pass);
         }
 

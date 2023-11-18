@@ -309,12 +309,14 @@ impl TexturedQuadRenderer {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.instances.clear();
+    }
+
     pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
-
-    pub fn prepare(&mut self, _device: &Device, _queue: &Queue) {}
 
     pub fn render<'rpass>(&'rpass self, rpass: &mut RenderPass<'rpass>) {
         rpass.set_pipeline(&self.render_pipeline);

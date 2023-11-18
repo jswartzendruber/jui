@@ -1,32 +1,33 @@
 use crate::renderer::State;
 use winit::{
+    dpi::PhysicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
 pub struct Bbox {
-    min: (f32, f32),
-    max: (f32, f32),
+    pub min: (f32, f32),
+    pub max: (f32, f32),
 }
 
 impl Bbox {
-    fn new(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
+    pub fn new(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
         Self {
             min: (x0, y0),
             max: (x1, y1),
         }
     }
 
-    fn width(&self) -> f32 {
+    pub fn width(&self) -> f32 {
         self.max.0 - self.min.0
     }
 
-    fn height(&self) -> f32 {
+    pub fn height(&self) -> f32 {
         self.max.1 - self.min.1
     }
 
-    fn center(&self) -> (f32, f32) {
+    pub fn center(&self) -> (f32, f32) {
         (
             (self.min.0 + self.max.0) / 2.0,
             (self.min.1 + self.max.1) / 2.0,
@@ -42,8 +43,10 @@ pub enum Thing {
 }
 
 pub trait Container {
-    fn render(&mut self, state: &mut State);
+    fn layout(&mut self, state: &mut State);
     fn add_element(&mut self, element: Thing);
+    fn elements(&mut self) -> &mut Vec<Thing>;
+    fn bbox(&mut self) -> &mut Bbox;
 }
 
 pub struct Hbox {
@@ -61,7 +64,7 @@ impl Hbox {
 }
 
 impl Container for Hbox {
-    fn render(&mut self, state: &mut State) {
+    fn layout(&mut self, state: &mut State) {
         let child_width = self.bbox.width() / self.elements.len() as f32;
         let child_height = self.bbox.height();
 
@@ -81,7 +84,7 @@ impl Container for Hbox {
                     child_bbox_center.0,
                     child_bbox_center.1,
                 ),
-                Thing::Quad { .. } => todo!(),
+                Thing::Quad { color } => state.quad_renderer.add_quad_instance(*color, &child_bbox),
                 Thing::Hbox(_) => todo!(),
             }
         }
@@ -89,6 +92,14 @@ impl Container for Hbox {
 
     fn add_element(&mut self, element: Thing) {
         self.elements.push(element);
+    }
+
+    fn elements(&mut self) -> &mut Vec<Thing> {
+        &mut self.elements
+    }
+
+    fn bbox(&mut self) -> &mut Bbox {
+        &mut self.bbox
     }
 }
 
@@ -117,14 +128,14 @@ impl SceneRoot {
         scene_root.root.add_element(Thing::Text {
             text: "SIDE 1".to_string(),
         });
-        scene_root.root.add_element(Thing::Text {
-            text: "SIDE 2".to_string(),
+        scene_root.root.add_element(Thing::Quad {
+            color: [1.0, 0.0, 0.0, 1.0],
         });
         scene_root.root.add_element(Thing::Text {
             text: "SIDE 3".to_string(),
         });
-        scene_root.root.add_element(Thing::Text {
-            text: "SIDE 4".to_string(),
+        scene_root.root.add_element(Thing::Quad {
+            color: [0.0, 0.0, 1.0, 1.0],
         });
 
         event_loop
@@ -145,13 +156,7 @@ impl SceneRoot {
                     event: WindowEvent::RedrawRequested,
                     ..
                 } => {
-                    scene_root.state.text_renderer.start_text_batch();
-                    scene_root.state.update();
-                    scene_root.root.render(&mut scene_root.state);
-                    scene_root
-                        .state
-                        .text_renderer
-                        .end_text_batch(&scene_root.state.queue);
+                    scene_root.update();
 
                     match scene_root.state.render() {
                         Ok(_) => {}
@@ -170,5 +175,16 @@ impl SceneRoot {
                 _ => {}
             })
             .unwrap();
+    }
+
+    pub fn update(&mut self) {
+        self.state.clear();
+        self.update_window_size(self.state.window.inner_size());
+        self.root.layout(&mut self.state);
+        self.state.update();
+    }
+
+    fn update_window_size(&mut self, size: PhysicalSize<u32>) {
+        *self.root.bbox() = Bbox::new(0.0, 0.0, size.width as f32, size.height as f32);
     }
 }

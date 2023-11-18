@@ -1,7 +1,9 @@
 use wgpu::{
-    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat,
+    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat, BufferDescriptor,
 };
 use winit::dpi::PhysicalSize;
+
+use crate::layout::Bbox;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -114,6 +116,7 @@ pub struct QuadRenderer {
     instances: Vec<Quad>,
     instance_buffer: Buffer,
 
+    uniforms: Uniforms,
     uniforms_buffer: Buffer,
     uniforms_bind_group: BindGroup,
 }
@@ -218,28 +221,13 @@ impl QuadRenderer {
         });
         let num_indices = INDICES.len() as u32;
 
-        let instances = vec![
-            // Quad {
-            //     origin: [200.0, 400.0],
-            //     size: [0.2, 0.05],
-            //     color: [0.0, 0.0, 0.0, 1.0],
-            //     radius: 0.04,
-            //     border: -0.0025,
-            //     border_color: [0.0, 0.7, 0.8, 1.0],
-            // },
-            // Quad {
-            //     origin: [200.0, 200.0],
-            //     size: [0.2, 0.05],
-            //     color: [0.0, 0.0, 0.0, 1.0],
-            //     radius: 0.0,
-            //     border: -0.0025,
-            //     border_color: [0.0, 0.7, 0.8, 1.0],
-            // },
-        ];
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let max_instances = 1024;
+        let instances = vec![];
+        let instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
+            size: max_instances * std::mem::size_of::<Quad>() as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         QuadRenderer {
@@ -251,17 +239,45 @@ impl QuadRenderer {
             instances,
             instance_buffer,
 
+            uniforms,
             uniforms_buffer,
             uniforms_bind_group,
         }
     }
 
-    pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
-        let uniforms = Uniforms::new(size);
-        queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+    pub fn clear(&mut self) {
+        self.instances.clear();
     }
 
-    pub fn prepare(&mut self, _device: &Device, _queue: &Queue) {}
+    pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
+        self.uniforms = Uniforms::new(size);
+        queue.write_buffer(
+            &self.uniforms_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        );
+        queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&self.instances),
+        );
+    }
+
+    pub fn add_quad_instance(&mut self, color: [f32; 4], bbox: &Bbox) {
+        let sizex = bbox.width() / self.uniforms.window_size[0];
+        let sizey = bbox.height() / self.uniforms.window_size[1] ;
+
+        let origin = bbox.center();
+
+        self.instances.push(Quad {
+            origin: [origin.0, origin.1],
+            size: [sizex, sizey],
+            color,
+            radius: 0.0,
+            border: 0.0,
+            border_color: [0.0, 0.0, 0.0, 1.0],
+        });
+    }
 
     pub fn render<'rpass>(&'rpass self, rpass: &mut RenderPass<'rpass>) {
         rpass.set_pipeline(&self.render_pipeline);

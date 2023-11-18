@@ -367,20 +367,14 @@ impl TextRenderer {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.indices.clear();
+        self.vertices.clear();
+    }
+
     pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
         let uniforms = Uniforms::new(size);
         queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
-
-        // self.add_string_to_batch("hello world!", queue, 400.0, 300.0);
-        // self.add_string_to_batch("bottom text.", queue, 400.0, 300.0 - self.font_size as f32);
-    }
-
-    pub fn start_text_batch(&mut self) {
-        self.indices = vec![];
-        self.vertices = vec![];
-    }
-
-    pub fn end_text_batch(&mut self, queue: &Queue) {
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
         queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
     }
@@ -457,8 +451,6 @@ impl TextRenderer {
             });
         }
     }
-
-    pub fn prepare(&mut self, _device: &Device, _queue: &Queue) {}
 
     pub fn render<'rpass>(&'rpass self, rpass: &mut RenderPass<'rpass>) {
         rpass.set_pipeline(&self.render_pipeline);
