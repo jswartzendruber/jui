@@ -1,4 +1,5 @@
 use crate::renderer::State;
+use std::time::{Duration, Instant};
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -110,6 +111,7 @@ pub struct SceneRoot {
     root: Box<dyn Container>,
 
     state: State,
+    last_frame_time: Duration,
 }
 
 impl SceneRoot {
@@ -126,6 +128,7 @@ impl SceneRoot {
                 window.inner_size().height as f32,
             ))),
             state: State::new(window).await,
+            last_frame_time: Duration::from_nanos(0),
         };
 
         scene_root.root.add_element(Thing::Text {
@@ -133,7 +136,7 @@ impl SceneRoot {
         });
         scene_root.root.add_element(Thing::TexturedQuad {});
         scene_root.root.add_element(Thing::Text {
-            text: "SIDE 3".to_string(),
+            text: format!("Last frame time: {:?}", scene_root.last_frame_time),
         });
         scene_root.root.add_element(Thing::Quad {
             color: [0.0, 0.0, 1.0, 1.0],
@@ -157,6 +160,8 @@ impl SceneRoot {
                     event: WindowEvent::RedrawRequested,
                     ..
                 } => {
+                    let frame_start = Instant::now();
+
                     scene_root.update();
 
                     match scene_root.state.render() {
@@ -169,6 +174,9 @@ impl SceneRoot {
                         }
                         Err(wgpu::SurfaceError::Timeout) => {}
                     }
+
+                    let frame_time = Instant::now().duration_since(frame_start);
+                    scene_root.last_frame_time = frame_time;
                 }
                 Event::AboutToWait => {
                     scene_root.state.window.request_redraw();
@@ -180,6 +188,9 @@ impl SceneRoot {
 
     pub fn update(&mut self) {
         self.state.clear();
+        self.root.elements()[2] = Thing::Text {
+            text: format!("FT: {:.2}", self.last_frame_time.as_micros() as f32 / 1000.0),
+        };
         self.update_window_size(self.state.window.inner_size());
         self.root.layout(&mut self.state);
         self.state.update();
