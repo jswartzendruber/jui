@@ -1,5 +1,6 @@
 use wgpu::{
-    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat, BufferDescriptor,
+    util::DeviceExt, BindGroup, Buffer, BufferDescriptor, Device, Queue, RenderPass,
+    RenderPipeline, TextureFormat,
 };
 use winit::dpi::PhysicalSize;
 
@@ -263,9 +264,9 @@ impl QuadRenderer {
         );
     }
 
-    pub fn add_quad_instance(&mut self, color: [f32; 4], bbox: &Bbox) {
+    pub fn add_instance(&mut self, color: [f32; 4], bbox: &Bbox) {
         let sizex = bbox.width() / self.uniforms.window_size[0];
-        let sizey = bbox.height() / self.uniforms.window_size[1] ;
+        let sizey = bbox.height() / self.uniforms.window_size[1];
 
         let origin = bbox.center();
 

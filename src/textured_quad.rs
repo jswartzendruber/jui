@@ -1,6 +1,7 @@
-use crate::texture::Texture;
+use crate::{layout::Bbox, texture::Texture};
 use wgpu::{
-    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPass, RenderPipeline, TextureFormat,
+    util::DeviceExt, BindGroup, Buffer, BufferDescriptor, Device, Queue, RenderPass,
+    RenderPipeline, TextureFormat,
 };
 use winit::dpi::PhysicalSize;
 
@@ -117,6 +118,7 @@ pub struct TexturedQuadRenderer {
     instances: Vec<Quad>,
     instance_buffer: Buffer,
 
+    uniforms: Uniforms,
     uniforms_buffer: Buffer,
     uniforms_bind_group: BindGroup,
 
@@ -271,26 +273,13 @@ impl TexturedQuadRenderer {
         });
         let num_indices = INDICES.len() as u32;
 
-        let instances = vec![
-            // Quad {
-            //     origin: [500.0, 400.0],
-            //     size: [0.2, 0.2],
-            //     radius: 0.0,
-            //     border: -0.0035,
-            //     border_color: [1.0, 1.0, 1.0, 1.0],
-            // },
-            // Quad {
-            //     origin: [600.0, 200.0],
-            //     size: [0.15, 0.2],
-            //     radius: 0.1,
-            //     border: -0.0125,
-            //     border_color: [0.9, 0.2, 0.3, 1.0],
-            // },
-        ];
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let max_instances = 1024;
+        let instances = vec![];
+        let instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
+            size: max_instances * std::mem::size_of::<Quad>() as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         TexturedQuadRenderer {
@@ -302,6 +291,7 @@ impl TexturedQuadRenderer {
             instances,
             instance_buffer,
 
+            uniforms,
             uniforms_buffer,
             uniforms_bind_group,
 
@@ -309,13 +299,37 @@ impl TexturedQuadRenderer {
         }
     }
 
+    pub fn add_instance(&mut self, bbox: &Bbox) {
+        let sizex = bbox.width() / self.uniforms.window_size[0];
+        let sizey = bbox.height() / self.uniforms.window_size[1];
+
+        let origin = bbox.center();
+
+        self.instances.push(Quad {
+            origin: [origin.0, origin.1],
+            size: [sizex, sizey],
+            radius: 0.0,
+            border: 0.0,
+            border_color: [0.0, 0.0, 0.0, 1.0],
+        });
+    }
+
     pub fn clear(&mut self) {
         self.instances.clear();
     }
 
     pub fn update(&mut self, size: PhysicalSize<u32>, queue: &Queue) {
-        let uniforms = Uniforms::new(size);
-        queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+        self.uniforms = Uniforms::new(size);
+        queue.write_buffer(
+            &self.uniforms_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        );
+        queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&self.instances),
+        );
     }
 
     pub fn render<'rpass>(&'rpass self, rpass: &mut RenderPass<'rpass>) {

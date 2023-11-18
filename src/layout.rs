@@ -6,6 +6,7 @@ use winit::{
     window::WindowBuilder,
 };
 
+#[derive(Debug)]
 pub struct Bbox {
     pub min: (f32, f32),
     pub max: (f32, f32),
@@ -38,6 +39,7 @@ impl Bbox {
 pub enum Thing {
     Text { text: String },
     Quad { color: [f32; 4] },
+    TexturedQuad {},
 
     Hbox(Hbox),
 }
@@ -84,7 +86,8 @@ impl Container for Hbox {
                     child_bbox_center.0,
                     child_bbox_center.1,
                 ),
-                Thing::Quad { color } => state.quad_renderer.add_quad_instance(*color, &child_bbox),
+                Thing::Quad { color } => state.quad_renderer.add_instance(*color, &child_bbox),
+                Thing::TexturedQuad {} => state.textured_quad_renderer.add_instance(&child_bbox),
                 Thing::Hbox(_) => todo!(),
             }
         }
@@ -128,9 +131,7 @@ impl SceneRoot {
         scene_root.root.add_element(Thing::Text {
             text: "SIDE 1".to_string(),
         });
-        scene_root.root.add_element(Thing::Quad {
-            color: [1.0, 0.0, 0.0, 1.0],
-        });
+        scene_root.root.add_element(Thing::TexturedQuad {});
         scene_root.root.add_element(Thing::Text {
             text: "SIDE 3".to_string(),
         });

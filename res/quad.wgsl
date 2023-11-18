@@ -17,9 +17,8 @@ struct FragmentInput {
     @location(1) size: vec2f,
     @location(2) color: vec4f,
     @location(3) radius: f32,
-    @location(4) pos: vec2f,
-    @location(5) border: f32,
-    @location(6) border_color: vec4f,
+    @location(4) border: f32,
+    @location(5) border_color: vec4f,
 }
 
 struct Uniforms {
@@ -46,7 +45,6 @@ fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
     var out: FragmentInput;
     out.border = quad.border;
     out.border_color = quad.border_color;
-    out.pos = scaled_coords;
     out.position = vec4f(transformed_coords, 0.0, 1.0);
     out.origin = ndc_origin;
     out.size = quad.size;
@@ -62,7 +60,7 @@ fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f3
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
-    let pos = (in.pos.xy / (uniforms.window_size.xy / 2.0)) - 1.0;
+    let pos = (in.position.xy / (uniforms.window_size.xy / 2.0)) - 1.0;
     let dist = rounded_rect_sdf(pos, in.origin, in.size, in.radius);
 
     var color: vec3f;
