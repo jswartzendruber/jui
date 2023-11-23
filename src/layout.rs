@@ -1,7 +1,6 @@
 use crate::renderer::State;
 use std::time::{Duration, Instant};
 use winit::{
-    dpi::PhysicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
@@ -37,47 +36,54 @@ impl Bbox {
     }
 }
 
+#[derive(Debug)]
 pub enum Thing {
     Text { text: String },
     Quad { color: [f32; 4] },
     TexturedQuad {},
 
     Hbox(Hbox),
+    Vbox(Vbox),
 }
 
-pub trait Container {
-    fn layout(&mut self, state: &mut State);
-    fn add_element(&mut self, element: Thing);
-    fn elements(&mut self) -> &mut Vec<Thing>;
-    fn bbox(&mut self) -> &mut Bbox;
-}
-
+#[derive(Debug)]
 pub struct Hbox {
     elements: Vec<Thing>,
-    bbox: Bbox,
 }
 
 impl Hbox {
-    pub fn new(bbox: Bbox) -> Self {
-        Self {
-            elements: vec![],
-            bbox,
-        }
+    pub fn new(elements: Vec<Thing>) -> Self {
+        Self { elements }
     }
 }
 
-impl Container for Hbox {
-    fn layout(&mut self, state: &mut State) {
-        let child_width = self.bbox.width() / self.elements.len() as f32;
-        let child_height = self.bbox.height();
+#[derive(Debug)]
+pub struct Vbox {
+    elements: Vec<Thing>,
+}
 
-        for (i, elem) in self.elements.iter().enumerate() {
-            let child_bbox = Bbox::new(
-                child_width * i as f32,
-                0.0,
-                (child_width * i as f32) + child_width,
-                child_height,
-            );
+impl Vbox {
+    pub fn new(elements: Vec<Thing>) -> Self {
+        Self { elements }
+    }
+}
+trait Container {
+    fn layout(&self, state: &mut State, parent_size: Bbox) {
+        for (i, elem) in self.elements().iter().enumerate() {
+            let child_bbox = if self.is_hbox() {
+                let child_index = i;
+                let child_width = parent_size.width() / self.elements().len() as f32;
+                let x0 = parent_size.min.0 + child_width * child_index as f32;
+
+                Bbox::new(x0, parent_size.min.1, x0 + child_width, parent_size.max.1)
+            } else {
+                let child_index = self.elements().len() - i - 1;
+                let child_height = parent_size.height() / self.elements().len() as f32;
+                let y0 = parent_size.min.1 + child_height * child_index as f32;
+
+                Bbox::new(parent_size.min.0, y0, parent_size.max.0, y0 + child_height)
+            };
+
             let child_bbox_center = child_bbox.center();
 
             match elem {
@@ -89,21 +95,34 @@ impl Container for Hbox {
                 ),
                 Thing::Quad { color } => state.quad_renderer.add_instance(*color, &child_bbox),
                 Thing::TexturedQuad {} => state.textured_quad_renderer.add_instance(&child_bbox),
-                Thing::Hbox(_) => todo!(),
+                Thing::Hbox(hbox) => hbox.layout(state, child_bbox),
+                Thing::Vbox(vbox) => vbox.layout(state, child_bbox),
             }
         }
     }
 
-    fn add_element(&mut self, element: Thing) {
-        self.elements.push(element);
+    fn elements(&self) -> &Vec<Thing>;
+
+    fn is_hbox(&self) -> bool;
+}
+
+impl Container for Hbox {
+    fn elements(&self) -> &Vec<Thing> {
+        &self.elements
     }
 
-    fn elements(&mut self) -> &mut Vec<Thing> {
-        &mut self.elements
+    fn is_hbox(&self) -> bool {
+        true
+    }
+}
+
+impl Container for Vbox {
+    fn elements(&self) -> &Vec<Thing> {
+        &self.elements
     }
 
-    fn bbox(&mut self) -> &mut Bbox {
-        &mut self.bbox
+    fn is_hbox(&self) -> bool {
+        false
     }
 }
 
@@ -121,26 +140,42 @@ impl SceneRoot {
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut scene_root = SceneRoot {
-            root: Box::new(Hbox::new(Bbox::new(
-                0.0,
-                0.0,
-                window.inner_size().width as f32,
-                window.inner_size().height as f32,
-            ))),
+            root: Box::new(Hbox::new(vec![
+                Thing::Vbox(Vbox::new(vec![
+                    Thing::Text {
+                        text: "FT: 0.0".to_string(),
+                    },
+                    Thing::Hbox(Hbox::new(vec![
+                        Thing::Quad {
+                            color: [0.0, 0.5, 0.5, 1.0],
+                        },
+                        Thing::Quad {
+                            color: [0.5, 0.5, 0.0, 1.0],
+                        },
+                    ])),
+                ])),
+                Thing::Quad {
+                    color: [0.0, 0.0, 1.0, 1.0],
+                },
+                Thing::Quad {
+                    color: [1.0, 0.0, 0.0, 1.0],
+                },
+                Thing::Vbox(Vbox::new(vec![
+                    Thing::Quad {
+                        color: [0.0, 1.0, 0.0, 1.0],
+                    },
+                    Thing::TexturedQuad {},
+                    Thing::Quad {
+                        color: [0.0, 1.0, 1.0, 1.0],
+                    },
+                    Thing::Text {
+                        text: "asdfa".to_string(),
+                    },
+                ])),
+            ])),
             state: State::new(window).await,
             last_frame_time: Duration::from_nanos(0),
         };
-
-        scene_root.root.add_element(Thing::Text {
-            text: "SIDE 1".to_string(),
-        });
-        scene_root.root.add_element(Thing::TexturedQuad {});
-        scene_root.root.add_element(Thing::Text {
-            text: format!("Last frame time: {:?}", scene_root.last_frame_time),
-        });
-        scene_root.root.add_element(Thing::Quad {
-            color: [0.0, 0.0, 1.0, 1.0],
-        });
 
         event_loop
             .run(move |event, elwt| match event {
@@ -188,15 +223,16 @@ impl SceneRoot {
 
     pub fn update(&mut self) {
         self.state.clear();
-        self.root.elements()[2] = Thing::Text {
-            text: format!("FT: {:.2}", self.last_frame_time.as_micros() as f32 / 1000.0),
-        };
-        self.update_window_size(self.state.window.inner_size());
-        self.root.layout(&mut self.state);
+        let window_size = self.state.window.inner_size();
+        self.root.layout(
+            &mut self.state,
+            Bbox::new(
+                0.0,
+                0.0,
+                window_size.width as f32,
+                window_size.height as f32,
+            ),
+        );
         self.state.update();
-    }
-
-    fn update_window_size(&mut self, size: PhysicalSize<u32>) {
-        *self.root.bbox() = Bbox::new(0.0, 0.0, size.width as f32, size.height as f32);
     }
 }

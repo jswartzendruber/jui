@@ -40,21 +40,21 @@ fn to_ndc(p: vec2f) -> vec2f {
 fn vs_main(vertex: Vertex, quad: Quad) -> FragmentInput {
     let ndc_origin = to_ndc(quad.origin);
     let transformed_coords = vertex.pos * quad.size + ndc_origin;
-    let scaled_coords = uniforms.window_size.xy * 0.5 * (transformed_coords + vec2f(1.0, 1.0));
 
     var out: FragmentInput;
-    out.tex_coords = vertex.tex_coords;
-    out.border = quad.border;
-    out.border_color = quad.border_color;
     out.position = vec4f(transformed_coords, 0.0, 1.0);
+    out.border_color = quad.border_color;
+    out.tex_coords = vertex.tex_coords;
+    out.radius = quad.radius;
+    out.border = quad.border;
     out.origin = ndc_origin;
     out.size = quad.size;
-    out.radius = quad.radius;
     return out;
 }
 
 fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f32) -> f32 {
-    let d = abs(frag_pos - rect_center) - size + radius;
+    let q = vec2f(frag_pos.x - rect_center.x, frag_pos.y + rect_center.y);
+    let d = abs(q) - size + radius;
     return length(max(d, vec2f(0.0, 0.0))) - radius + min(max(d.x, d.y), 0.0);
 }
 
@@ -63,9 +63,9 @@ fn rounded_rect_sdf(frag_pos: vec2f, rect_center: vec2f, size: vec2f, radius: f3
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4f {
-    let pos = (in.position.xy / (uniforms.window_size.xy / 2.0)) - 1.0;
+    let pos = to_ndc(in.position.xy);
     let dist = rounded_rect_sdf(pos, in.origin, in.size, in.radius);
-
+    
     var color: vec3f;
     if dist < in.border {
         color = textureSample(t_diffuse, s_diffuse, in.tex_coords).xyz;
@@ -75,6 +75,5 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4f {
         color = vec3f(0.0, 0.0, 0.0);
     }
 
-    color = mix(color, vec3f(1.0), 1.0 - smoothstep(-1.0, 0.0, abs(dist)));
     return vec4f(color, 1.0);
 }
