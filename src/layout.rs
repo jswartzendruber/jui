@@ -38,8 +38,14 @@ impl Bbox {
 
 #[derive(Debug)]
 pub enum Thing {
-    Text { text: String },
-    Quad { color: [f32; 4] },
+    Text {
+        text: String,
+        text_color: [f32; 4],
+        background_color: [f32; 4],
+    },
+    Quad {
+        color: [f32; 4],
+    },
     TexturedQuad {},
 
     Hbox(Hbox),
@@ -87,12 +93,22 @@ trait Container {
             let child_bbox_center = child_bbox.center();
 
             match elem {
-                Thing::Text { text } => state.text_renderer.add_string_to_batch(
+                Thing::Text {
                     text,
-                    &state.queue,
-                    child_bbox_center.0,
-                    child_bbox_center.1,
-                ),
+                    text_color,
+                    background_color,
+                } => {
+                    state
+                        .quad_renderer
+                        .add_instance(*background_color, &child_bbox);
+                    state.text_renderer.add_string_to_batch(
+                        text,
+                        &state.queue,
+                        child_bbox_center.0,
+                        child_bbox_center.1,
+                        *text_color,
+                    );
+                }
                 Thing::Quad { color } => state.quad_renderer.add_instance(*color, &child_bbox),
                 Thing::TexturedQuad {} => state.textured_quad_renderer.add_instance(&child_bbox),
                 Thing::Hbox(hbox) => hbox.layout(state, child_bbox),
@@ -144,6 +160,8 @@ impl SceneRoot {
                 Thing::Vbox(Vbox::new(vec![
                     Thing::Text {
                         text: "FT: 0.0".to_string(),
+                        text_color: [1.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                     Thing::Hbox(Hbox::new(vec![
                         Thing::Quad {
@@ -170,6 +188,8 @@ impl SceneRoot {
                     },
                     Thing::Text {
                         text: "asdfa".to_string(),
+                        text_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                 ])),
             ])),
