@@ -38,6 +38,14 @@ impl Bbox {
     pub fn top_left(&self) -> (f32, f32) {
         (self.min.0, self.max.1)
     }
+
+    // Returns true if pos is inside the bbox.
+    pub fn inside(&self, pos: (f32, f32)) -> bool {
+        let x_inside = self.min.0 <= pos.0 && pos.0 <= self.max.0;
+        let y_inside = self.min.1 <= pos.1 && pos.1 <= self.max.1;
+
+        x_inside && y_inside
+    }
 }
 
 #[derive(Debug)]
@@ -49,6 +57,7 @@ pub enum Thing {
     },
     TextMultiLine {
         text: Vec<String>,
+        wrap_text: bool,
         text_color: [f32; 4],
         background_color: [f32; 4],
     },
@@ -116,27 +125,27 @@ trait Container {
                         top_left.0,
                         top_left.1,
                         *text_color,
+                        None,
                     );
                 }
                 Thing::TextMultiLine {
                     text,
+                    wrap_text,
                     text_color,
                     background_color,
                 } => {
                     state
                         .quad_renderer
                         .add_instance(*background_color, &child_bbox);
-                    let mut top_left_y = top_left.1;
-                    for line in text {
-                        state.text_renderer.add_string_to_batch(
-                            line,
-                            &state.queue,
-                            top_left.0,
-                            top_left_y,
-                            *text_color,
-                        );
-                        top_left_y -= state.text_renderer.line_height();
-                    }
+
+                    state.text_renderer.add_multiline_string_to_batch(
+                        text,
+                        &state.queue,
+                        top_left.0,
+                        top_left.1,
+                        *text_color,
+                        if *wrap_text { Some(&child_bbox) } else { None },
+                    );
                 }
                 Thing::Quad { color } => state.quad_renderer.add_instance(*color, &child_bbox),
                 Thing::TexturedQuad {} => state.textured_quad_renderer.add_instance(&child_bbox),
@@ -187,12 +196,13 @@ impl SceneRoot {
         let mut scene_root = SceneRoot {
             root: Box::new(Hbox::new(vec![Thing::TextMultiLine {
                 text: vec![
-                    "ASDF KJASDF KJFJDFJ DFJ AJDSF JSJDF J".to_string(),
-                    "KJFJDFJ DFJ AJDSF JSJDF JASDF KJASDF".to_string(),
-                    "ASDF KJASDF JSJDF JKJFJDFJ DFJ AJDSF".to_string(),
-                    "AJDSF JSJDF JASDF KJASDF KJFJDFJ DFJ".to_string(),
-                    "ASDF AJDSF JSJDF JKJASDF KJFJDFJ DFJ".to_string(),
+                    "ASDF KJASDF KJFJDFJ DFJ AJFADFDSF JSJDF JASDF KJASDF KJFJDFJ DFJ AJDSF JSJDF J".to_string(),
+                    "KJFJDFJ DFJ AJDSF JSJDF JASDF KVDVDVSJASDFKJFJDFJ DFJ AJDSF JSJDF JASDF KJASDF".to_string(),
+                    "ASDF KJASDF JSJDF JKJFJDFJ DFJ AJDSFASDF KJASDFVADSVZXC JSJDF JKJFJDFJ DFJ AJDSF".to_string(),
+                    "AJDSF JSJDFXC JASDF KJASDF KJFJDFVCZX DFJAJDSF JSJDF JASDF KJASDF KJFJDFJ DFJ".to_string(),
+                    "ASDF AJDSF JSJDF JKJASDF KJFJDFXZCVZCXVJ DFJASDF AJDSF JSJDF JKJASDF KJFJDFJ DFJ".to_string(),
                 ],
+                wrap_text : true,
                 text_color: [1.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
             }])),

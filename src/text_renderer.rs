@@ -1,4 +1,4 @@
-use crate::texture::Texture;
+use crate::{layout::Bbox, texture::Texture};
 use etagere::*;
 use freetype::{face::LoadFlag, Face};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -349,7 +349,7 @@ impl TextRenderer {
             multiview: None,
         });
 
-        let max_chars = 1024;
+        let max_chars = 4096;
         let vertex_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Vertex Buffer"),
             size: max_chars * 4 * std::mem::size_of::<Vertex>() as u64,
@@ -434,6 +434,10 @@ impl TextRenderer {
 
     /// Add a string of text for rendering.
     /// (x, y) is the top left corner of where the text will be placed.
+    /// If wrap_bbox exists, will wrap the line to stay inside the bbox. Must not fail.
+    ///
+    /// Returns the vertical space it used up.
+    /// When wrapping, this could be multiple lines * line_height.
     pub fn add_string_to_batch(
         &mut self,
         s: &str,
@@ -441,17 +445,67 @@ impl TextRenderer {
         x: f32,
         y: f32,
         text_color: [f32; 4],
-    ) {
+        wrap_bbox: Option<&Bbox>,
+    ) -> f32 {
         // calculate bottom, fudge it a bit because off center things look more centered
         let mut y = y.floor() - self.line_height();
+        let y_start = y;
 
         // calculate left
         let mut x = x.floor();
 
-        // text is placed using x,y, the bottom left corner of the start of the text.
-        for c in s.chars() {
-            self.cache_char(c, queue);
-            self.add_char_to_batch(c, &mut x, &mut y, text_color);
+        // calculate length for wrapping
+        if let Some(wrap_bbox) = wrap_bbox {
+            let mut len = 0.0;
+            for c in s.chars() {
+                self.cache_char(c, queue);
+                let atlas_char = self.atlas.allocations.get(&c).unwrap();
+                len += atlas_char.advance.0;
+            }
+
+            let num_lines = (len / wrap_bbox.width()).ceil() as usize;
+
+            for _ in 0..num_lines {
+                // text is placed using x,y, the bottom left corner of the start of the text.
+                x = wrap_bbox.min.0;
+                for c in s.chars() {
+                    if x > wrap_bbox.max.0 {
+                        x = wrap_bbox.min.0;
+                        y -= self.line_height();
+                    } else if !wrap_bbox.inside((x, y)) {
+                        // Exit early if we've run out of space. No point continuing.
+                        return y_start - y;
+                    }
+                    self.cache_char(c, queue);
+                    self.add_char_to_batch(c, &mut x, &mut y, text_color);
+                }
+                y -= self.line_height();
+            }
+            y_start - y
+        } else {
+            // text is placed using x,y, the bottom left corner of the start of the text.
+            for c in s.chars() {
+                self.cache_char(c, queue);
+                self.add_char_to_batch(c, &mut x, &mut y, text_color);
+            }
+            y_start - y
+        }
+    }
+
+    /// If wrap_bbox exists, will wrap the line to stay inside the bbox. Must not fail.
+    pub fn add_multiline_string_to_batch(
+        &mut self,
+        text: &Vec<String>,
+        queue: &Queue,
+        x: f32,
+        y: f32,
+        text_color: [f32; 4],
+        wrap_bbox: Option<&Bbox>,
+    ) {
+        let mut y = y;
+        for line in text {
+            let line = self.add_string_to_batch(line, queue, x, y, text_color, wrap_bbox);
+            y -= line;
         }
     }
 
