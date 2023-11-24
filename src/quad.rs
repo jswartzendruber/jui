@@ -257,16 +257,6 @@ impl QuadRenderer {
             0,
             bytemuck::cast_slice(&[self.uniforms]),
         );
-        // self.instances = vec![];
-        // self.instances.push(Quad {
-        //     origin: [200.0, 300.0],
-        //     size: [0.25, 0.5],
-        //     color: [1.0, 1.0, 1.0, 1.0],
-        //     radius: 0.0,
-        //     border: 0.0,
-        //     border_color: [0.0, 0.0, 0.0, 1.0],
-        // });
-        // println!("{:?}", self.instances);
         queue.write_buffer(
             &self.instance_buffer,
             0,

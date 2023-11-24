@@ -11,10 +11,9 @@ use winit::dpi::PhysicalSize;
 
 pub struct Atlas {
     size: f32,
-    pub atlas_image: DynamicImage,
+    atlas_image: DynamicImage,
     allocations: LruCache<char, AtlasChar>,
     allocator: AtlasAllocator,
-    pub is_dirty: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -28,9 +27,9 @@ struct AtlasChar {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    pub pos: [f32; 2],
-    pub tex_coords: [f32; 2],
-    pub color: [f32; 4],
+    pos: [f32; 2],
+    tex_coords: [f32; 2],
+    text_color: [f32; 4],
 }
 
 impl Vertex {
@@ -86,8 +85,8 @@ pub struct TextRenderer {
 
     texture_bind_group: BindGroup,
 
-    pub atlas: Atlas,
-    pub atlas_texture: Texture,
+    atlas: Atlas,
+    atlas_texture: Texture,
 
     // Hold onto this in case we want to load any new font faces
     _freetype: freetype::Library,
@@ -96,36 +95,34 @@ pub struct TextRenderer {
 }
 
 impl TextRenderer {
-    pub fn cache_char(&mut self, c: char, queue: &Queue) {
+    fn cache_char(&mut self, c: char, queue: &Queue) {
         if self.atlas.allocations.get(&c).is_some() {
             return;
         }
 
-        self.face
-            .load_char(c as usize, LoadFlag::RENDER | LoadFlag::TARGET_LCD)
-            .unwrap();
+        self.face.load_char(c as usize, LoadFlag::RENDER).unwrap();
         let glyph = self.face.glyph();
 
-        let bitmap = glyph.bitmap();
-        let width = bitmap.width() as u32 / 3;
-        let height = bitmap.rows() as u32;
+        let width = glyph.bitmap().width() as u32;
+        let height = glyph.bitmap().rows() as u32;
 
         if width == 0 || height == 0 {
             return;
         }
 
-        let mut img = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
-        for y in 0..height {
-            for x in 0..width {
-                let index = (y * glyph.bitmap().pitch() as u32 + (3 * x)) as usize;
+        // Pad allocation 1 pixel on each side to avoid bleeding
+        let mut img = RgbaImage::from_pixel(width + 2, height + 2, Rgba([0, 0, 0, 0]));
+
+        for x in 0..width {
+            for y in 0..height {
                 img.put_pixel(
-                    x,
-                    y,
+                    x as u32 + 1,
+                    y as u32 + 1,
                     Rgba([
-                        bitmap.buffer()[index],
-                        bitmap.buffer()[index + 1],
-                        bitmap.buffer()[index + 2],
                         255,
+                        255,
+                        255,
+                        glyph.bitmap().buffer()[(x + y * width) as usize],
                     ]),
                 );
             }
@@ -136,7 +133,7 @@ impl TextRenderer {
             if let Some(alloc) = self
                 .atlas
                 .allocator
-                .allocate(size2(width as i32, height as i32))
+                .allocate(size2(img.width() as i32, img.height() as i32))
             {
                 let atlas_char = AtlasChar {
                     advance: (
@@ -146,7 +143,7 @@ impl TextRenderer {
                     size: (width as f32, height as f32),
                     pos: (
                         glyph.bitmap_left() as f32,
-                        glyph.bitmap_top() as f32 - glyph.bitmap().rows() as f32,
+                        glyph.bitmap_top() as f32 - height as f32,
                     ),
                     alloc,
                 };
@@ -167,7 +164,7 @@ impl TextRenderer {
                     &img,
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: Some(4 * img.width() as u32),
+                        bytes_per_row: Some(4 * img.width()),
                         rows_per_image: None,
                     },
                     wgpu::Extent3d {
@@ -188,14 +185,13 @@ impl TextRenderer {
 
     fn generate_img_atlas(size: f32) -> Atlas {
         let allocator = AtlasAllocator::new(size2(size as i32, size as i32));
-        let img = RgbaImage::from_pixel(size as u32, size as u32, Rgba([0, 0, 0, 255]));
+        let img = RgbaImage::from_pixel(size as u32, size as u32, Rgba([0, 0, 0, 0]));
 
         Atlas {
             atlas_image: DynamicImage::ImageRgba8(img),
             allocations: LruCache::unbounded(),
             size,
             allocator,
-            is_dirty: false,
         }
     }
 
@@ -205,7 +201,7 @@ impl TextRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let font_size = 36;
+        let font_size = 18;
         let lib = freetype::Library::init().unwrap();
         let face = lib.new_face("res/iosevka-extended.ttf", 0).unwrap();
         face.set_char_size(font_size * 64, 0, 0, 0).unwrap();
@@ -388,9 +384,16 @@ impl TextRenderer {
 
     /// Add a string of text for rendering.
     /// (x, y) is the vertical and horizontal center of where the text will be placed.
-    pub fn add_string_to_batch(&mut self, s: &str, queue: &Queue, x: f32, y: f32) {
+    pub fn add_string_to_batch(
+        &mut self,
+        s: &str,
+        queue: &Queue,
+        x: f32,
+        y: f32,
+        text_color: [f32; 4],
+    ) {
         // calculate bottom, fudge it a bit because off center things look more centered
-        let mut y = y - ((self.font_size as f32 * 0.8) / 2.0);
+        let mut y = (y - ((self.font_size as f32 * 0.8) / 2.0)).floor();
 
         // calculate left
         let mut text_len = 0.0;
@@ -400,21 +403,27 @@ impl TextRenderer {
                 text_len += glyph.advance.0;
             }
         }
-        let mut x = x - (text_len / 2.0);
+        let mut x = (x - (text_len / 2.0)).floor();
 
         // text is placed using x,y, the bottom left corner of the start of the text.
         for c in s.chars() {
             self.cache_char(c, queue);
-            self.add_char_to_batch(c, &mut x, &mut y);
+            self.add_char_to_batch(c, &mut x, &mut y, text_color);
         }
     }
 
     /// Internal details, you should use add_string_to_batch
-    fn add_char_to_batch(&mut self, c: char, x_start: &mut f32, y_start: &mut f32) {
+    fn add_char_to_batch(
+        &mut self,
+        c: char,
+        x_start: &mut f32,
+        y_start: &mut f32,
+        text_color: [f32; 4],
+    ) {
         if let Some(glyph) = self.atlas.allocations.get(&c) {
             let alloc_rect = glyph.alloc.rectangle;
             // Undo padding
-            let glyph_pos_in_atlas = (alloc_rect.min.x as f32, alloc_rect.min.y as f32);
+            let glyph_pos_in_atlas = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
 
             let x = *x_start + glyph.pos.0;
             let y = *y_start + glyph.pos.1;
@@ -440,22 +449,22 @@ impl TextRenderer {
             self.vertices.push(Vertex {
                 pos: [x, y], // 0
                 tex_coords: [x0, y1],
-                color: [1.0, 1.0, 1.0, 1.0],
+                text_color,
             });
             self.vertices.push(Vertex {
                 pos: [x + w, y], // 1
                 tex_coords: [x1, y1],
-                color: [1.0, 1.0, 1.0, 1.0],
+                text_color,
             });
             self.vertices.push(Vertex {
                 pos: [x + w, y + h], // 2
                 tex_coords: [x1, y0],
-                color: [1.0, 1.0, 1.0, 1.0],
+                text_color,
             });
             self.vertices.push(Vertex {
                 pos: [x, y + h], // 3
                 tex_coords: [x0, y0],
-                color: [1.0, 1.0, 1.0, 1.0],
+                text_color,
             });
         }
     }
