@@ -21,7 +21,7 @@ struct AtlasChar {
     advance: (f32, f32),
     pos: (f32, f32),
     size: (f32, f32),
-    alloc: Allocation,
+    alloc: Option<Allocation>,
 }
 
 #[repr(C)]
@@ -106,6 +106,20 @@ impl TextRenderer {
         let width = glyph.bitmap().width() as u32;
         let height = glyph.bitmap().rows() as u32;
 
+        if c.is_whitespace() {
+            let atlas_char = AtlasChar {
+                advance: (
+                    glyph.advance().x as f32 / 64.0,
+                    glyph.advance().y as f32 / 64.0,
+                ),
+                size: (width as f32, height as f32),
+                pos: (0.0, 0.0),
+                alloc: None,
+            };
+            self.atlas.allocations.put(c, atlas_char);
+            return;
+        }
+
         if width == 0 || height == 0 {
             return;
         }
@@ -145,10 +159,10 @@ impl TextRenderer {
                         glyph.bitmap_left() as f32,
                         glyph.bitmap_top() as f32 - height as f32,
                     ),
-                    alloc,
+                    alloc: Some(alloc),
                 };
-                let xmin = atlas_char.alloc.rectangle.min.x;
-                let ymin = atlas_char.alloc.rectangle.min.y;
+                let xmin = alloc.rectangle.min.x;
+                let ymin = alloc.rectangle.min.y;
 
                 queue.write_texture(
                     wgpu::ImageCopyTexture {
@@ -178,7 +192,9 @@ impl TextRenderer {
                 return;
             } else {
                 let lru = self.atlas.allocations.pop_lru().unwrap();
-                self.atlas.allocator.deallocate(lru.1.alloc.id);
+                if let Some(alloc) = lru.1.alloc {
+                    self.atlas.allocator.deallocate(alloc.id);
+                }
             }
         }
     }
@@ -421,10 +437,6 @@ impl TextRenderer {
         text_color: [f32; 4],
     ) {
         if let Some(glyph) = self.atlas.allocations.get(&c) {
-            let alloc_rect = glyph.alloc.rectangle;
-            // Undo padding
-            let glyph_pos_in_atlas = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
-
             let x = *x_start + glyph.pos.0;
             let y = *y_start + glyph.pos.1;
             let w = glyph.size.0;
@@ -433,39 +445,47 @@ impl TextRenderer {
             *x_start += glyph.advance.0;
             *y_start += glyph.advance.1;
 
-            let x0 = glyph_pos_in_atlas.0 / self.atlas.size;
-            let x1 = (glyph_pos_in_atlas.0 + glyph.size.0) / self.atlas.size;
-            let y1 = (glyph_pos_in_atlas.1 + glyph.size.1) / self.atlas.size;
-            let y0 = glyph_pos_in_atlas.1 / self.atlas.size;
+            if let Some(alloc_rect) = glyph.alloc {
+                // Undo padding
+                let glyph_pos_in_atlas = (
+                    alloc_rect.rectangle.min.x as f32 + 1.0,
+                    alloc_rect.rectangle.min.y as f32 + 1.0,
+                );
 
-            let start = (4 * (self.indices.len() / 6)) as u16;
-            self.indices.push(start);
-            self.indices.push(start + 1);
-            self.indices.push(start + 2);
-            self.indices.push(start);
-            self.indices.push(start + 2);
-            self.indices.push(start + 3);
+                let x0 = glyph_pos_in_atlas.0 / self.atlas.size;
+                let x1 = (glyph_pos_in_atlas.0 + glyph.size.0) / self.atlas.size;
+                let y1 = (glyph_pos_in_atlas.1 + glyph.size.1) / self.atlas.size;
+                let y0 = glyph_pos_in_atlas.1 / self.atlas.size;
 
-            self.vertices.push(Vertex {
-                pos: [x, y], // 0
-                tex_coords: [x0, y1],
-                text_color,
-            });
-            self.vertices.push(Vertex {
-                pos: [x + w, y], // 1
-                tex_coords: [x1, y1],
-                text_color,
-            });
-            self.vertices.push(Vertex {
-                pos: [x + w, y + h], // 2
-                tex_coords: [x1, y0],
-                text_color,
-            });
-            self.vertices.push(Vertex {
-                pos: [x, y + h], // 3
-                tex_coords: [x0, y0],
-                text_color,
-            });
+                let start = (4 * (self.indices.len() / 6)) as u16;
+                self.indices.push(start);
+                self.indices.push(start + 1);
+                self.indices.push(start + 2);
+                self.indices.push(start);
+                self.indices.push(start + 2);
+                self.indices.push(start + 3);
+
+                self.vertices.push(Vertex {
+                    pos: [x, y], // 0
+                    tex_coords: [x0, y1],
+                    text_color,
+                });
+                self.vertices.push(Vertex {
+                    pos: [x + w, y], // 1
+                    tex_coords: [x1, y1],
+                    text_color,
+                });
+                self.vertices.push(Vertex {
+                    pos: [x + w, y + h], // 2
+                    tex_coords: [x1, y0],
+                    text_color,
+                });
+                self.vertices.push(Vertex {
+                    pos: [x, y + h], // 3
+                    tex_coords: [x0, y0],
+                    text_color,
+                });
+            }
         }
     }
 

@@ -156,43 +156,11 @@ impl SceneRoot {
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut scene_root = SceneRoot {
-            root: Box::new(Hbox::new(vec![
-                Thing::Vbox(Vbox::new(vec![
-                    Thing::Text {
-                        text: "FT: 0.0".to_string(),
-                        text_color: [1.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                    Thing::Hbox(Hbox::new(vec![
-                        Thing::Quad {
-                            color: [0.0, 0.5, 0.5, 1.0],
-                        },
-                        Thing::Quad {
-                            color: [0.5, 0.5, 0.0, 1.0],
-                        },
-                    ])),
-                ])),
-                Thing::Quad {
-                    color: [0.0, 0.0, 1.0, 1.0],
-                },
-                Thing::Quad {
-                    color: [1.0, 0.0, 0.0, 1.0],
-                },
-                Thing::Vbox(Vbox::new(vec![
-                    Thing::Quad {
-                        color: [0.0, 1.0, 0.0, 1.0],
-                    },
-                    Thing::TexturedQuad {},
-                    Thing::Quad {
-                        color: [0.0, 1.0, 1.0, 1.0],
-                    },
-                    Thing::Text {
-                        text: "asdfa".to_string(),
-                        text_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                ])),
-            ])),
+            root: Box::new(Hbox::new(vec![Thing::Text {
+                text: "ASDF KJASDF KJFJDFJ DFJ AJDSF JSJDF J".to_string(),
+                text_color: [1.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            }])),
             state: State::new(window).await,
             last_frame_time: Duration::from_nanos(0),
         };
