@@ -101,21 +101,49 @@ impl TextRenderer {
             return;
         }
 
-        self.face.load_char(c as usize, LoadFlag::RENDER).unwrap();
+        self.face
+            .load_char(c as usize, LoadFlag::RENDER | LoadFlag::TARGET_LCD)
+            .unwrap();
         let glyph = self.face.glyph();
 
-        // Pad allocation 1 pixel on each side to avoid bleeding
-        let new_glyph_size = size2(glyph.bitmap().width() + 2, glyph.bitmap().rows() + 2);
+        let bitmap = glyph.bitmap();
+        let width = bitmap.width() as u32 / 3;
+        let height = bitmap.rows() as u32;
+
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        let mut img = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
+        for y in 0..height {
+            for x in 0..width {
+                let index = (y * glyph.bitmap().pitch() as u32 + (3 * x)) as usize;
+                img.put_pixel(
+                    x,
+                    y,
+                    Rgba([
+                        bitmap.buffer()[index],
+                        bitmap.buffer()[index + 1],
+                        bitmap.buffer()[index + 2],
+                        255,
+                    ]),
+                );
+            }
+        }
 
         // Evict characters until we can place the new one
         loop {
-            if let Some(alloc) = self.atlas.allocator.allocate(new_glyph_size) {
+            if let Some(alloc) = self
+                .atlas
+                .allocator
+                .allocate(size2(width as i32, height as i32))
+            {
                 let atlas_char = AtlasChar {
                     advance: (
                         glyph.advance().x as f32 / 64.0,
                         glyph.advance().y as f32 / 64.0,
                     ),
-                    size: (glyph.bitmap().width() as f32, glyph.bitmap().rows() as f32),
+                    size: (width as f32, height as f32),
                     pos: (
                         glyph.bitmap_left() as f32,
                         glyph.bitmap_top() as f32 - glyph.bitmap().rows() as f32,
@@ -124,27 +152,6 @@ impl TextRenderer {
                 };
                 let xmin = atlas_char.alloc.rectangle.min.x;
                 let ymin = atlas_char.alloc.rectangle.min.y;
-
-                let mut img = RgbaImage::from_pixel(
-                    glyph.bitmap().width() as u32 + 2,
-                    glyph.bitmap().rows() as u32 + 2,
-                    Rgba([0, 0, 0, 0]),
-                );
-
-                for x in 0..glyph.bitmap().width() {
-                    for y in 0..glyph.bitmap().rows() {
-                        img.put_pixel(
-                            x as u32 + 1,
-                            y as u32 + 1,
-                            Rgba([
-                                255,
-                                255,
-                                255,
-                                glyph.bitmap().buffer()[(x + y * glyph.bitmap().width()) as usize],
-                            ]),
-                        );
-                    }
-                }
 
                 queue.write_texture(
                     wgpu::ImageCopyTexture {
@@ -160,7 +167,7 @@ impl TextRenderer {
                     &img,
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: Some(4 * (glyph.bitmap().width() + 2) as u32),
+                        bytes_per_row: Some(4 * img.width() as u32),
                         rows_per_image: None,
                     },
                     wgpu::Extent3d {
@@ -198,12 +205,12 @@ impl TextRenderer {
         format: &TextureFormat,
         size: PhysicalSize<u32>,
     ) -> Self {
-        let font_size = 48;
+        let font_size = 36;
         let lib = freetype::Library::init().unwrap();
-        let face = lib.new_face("res/Roboto-Regular.ttf", 0).unwrap();
+        let face = lib.new_face("res/iosevka-extended.ttf", 0).unwrap();
         face.set_char_size(font_size * 64, 0, 0, 0).unwrap();
 
-        let atlas = Self::generate_img_atlas(192.0);
+        let atlas = Self::generate_img_atlas(256.0);
         let atlas_texture =
             Texture::from_image(device, queue, &atlas.atlas_image, Some("Atlas image"));
 
@@ -407,7 +414,7 @@ impl TextRenderer {
         if let Some(glyph) = self.atlas.allocations.get(&c) {
             let alloc_rect = glyph.alloc.rectangle;
             // Undo padding
-            let glyph_pos_in_atlas = (alloc_rect.min.x as f32 + 1.0, alloc_rect.min.y as f32 + 1.0);
+            let glyph_pos_in_atlas = (alloc_rect.min.x as f32, alloc_rect.min.y as f32);
 
             let x = *x_start + glyph.pos.0;
             let y = *y_start + glyph.pos.1;

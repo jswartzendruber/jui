@@ -169,7 +169,7 @@ impl SceneRoot {
                         color: [0.0, 1.0, 1.0, 1.0],
                     },
                     Thing::Text {
-                        text: "asdfa".to_string(),
+                        text: "asdfy".to_string(),
                     },
                 ])),
             ])),
