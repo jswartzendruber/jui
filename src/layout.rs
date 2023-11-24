@@ -47,6 +47,11 @@ pub enum Thing {
         text_color: [f32; 4],
         background_color: [f32; 4],
     },
+    TextMultiLine {
+        text: Vec<String>,
+        text_color: [f32; 4],
+        background_color: [f32; 4],
+    },
     Quad {
         color: [f32; 4],
     },
@@ -113,6 +118,26 @@ trait Container {
                         *text_color,
                     );
                 }
+                Thing::TextMultiLine {
+                    text,
+                    text_color,
+                    background_color,
+                } => {
+                    state
+                        .quad_renderer
+                        .add_instance(*background_color, &child_bbox);
+                    let mut top_left_y = top_left.1;
+                    for line in text {
+                        state.text_renderer.add_string_to_batch(
+                            line,
+                            &state.queue,
+                            top_left.0,
+                            top_left_y,
+                            *text_color,
+                        );
+                        top_left_y -= state.text_renderer.line_height();
+                    }
+                }
                 Thing::Quad { color } => state.quad_renderer.add_instance(*color, &child_bbox),
                 Thing::TexturedQuad {} => state.textured_quad_renderer.add_instance(&child_bbox),
                 Thing::Hbox(hbox) => hbox.layout(state, child_bbox),
@@ -160,8 +185,14 @@ impl SceneRoot {
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut scene_root = SceneRoot {
-            root: Box::new(Hbox::new(vec![Thing::Text {
-                text: "ASDF KJASDF KJFJDFJ DFJ AJDSF JSJDF J".to_string(),
+            root: Box::new(Hbox::new(vec![Thing::TextMultiLine {
+                text: vec![
+                    "ASDF KJASDF KJFJDFJ DFJ AJDSF JSJDF J".to_string(),
+                    "KJFJDFJ DFJ AJDSF JSJDF JASDF KJASDF".to_string(),
+                    "ASDF KJASDF JSJDF JKJFJDFJ DFJ AJDSF".to_string(),
+                    "AJDSF JSJDF JASDF KJASDF KJFJDFJ DFJ".to_string(),
+                    "ASDF AJDSF JSJDF JKJASDF KJFJDFJ DFJ".to_string(),
+                ],
                 text_color: [1.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
             }])),

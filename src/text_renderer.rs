@@ -428,6 +428,10 @@ impl TextRenderer {
         }
     }
 
+    pub fn line_height(&self) -> f32 {
+        self.font_size as f32
+    }
+
     /// Add a string of text for rendering.
     /// (x, y) is the top left corner of where the text will be placed.
     pub fn add_string_to_batch(
@@ -439,7 +443,7 @@ impl TextRenderer {
         text_color: [f32; 4],
     ) {
         // calculate bottom, fudge it a bit because off center things look more centered
-        let mut y = (y - (self.font_size as f32 * 0.8)).floor();
+        let mut y = y.floor() - self.line_height();
 
         // calculate left
         let mut x = x.floor();
