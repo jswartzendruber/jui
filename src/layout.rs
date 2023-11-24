@@ -34,6 +34,10 @@ impl Bbox {
             (self.min.1 + self.max.1) / 2.0,
         )
     }
+
+    pub fn top_left(&self) -> (f32, f32) {
+        (self.min.0, self.max.1)
+    }
 }
 
 #[derive(Debug)]
@@ -90,7 +94,7 @@ trait Container {
                 Bbox::new(parent_size.min.0, y0, parent_size.max.0, y0 + child_height)
             };
 
-            let child_bbox_center = child_bbox.center();
+            let top_left = child_bbox.top_left();
 
             match elem {
                 Thing::Text {
@@ -104,8 +108,8 @@ trait Container {
                     state.text_renderer.add_string_to_batch(
                         text,
                         &state.queue,
-                        child_bbox_center.0,
-                        child_bbox_center.1,
+                        top_left.0,
+                        top_left.1,
                         *text_color,
                     );
                 }

@@ -400,7 +400,7 @@ impl TextRenderer {
 
     /// Add a string of text for rendering.
     /// (x, y) is the vertical and horizontal center of where the text will be placed.
-    pub fn add_string_to_batch(
+    pub fn add_string_to_batch_centered(
         &mut self,
         s: &str,
         queue: &Queue,
@@ -420,6 +420,29 @@ impl TextRenderer {
             }
         }
         let mut x = (x - (text_len / 2.0)).floor();
+
+        // text is placed using x,y, the bottom left corner of the start of the text.
+        for c in s.chars() {
+            self.cache_char(c, queue);
+            self.add_char_to_batch(c, &mut x, &mut y, text_color);
+        }
+    }
+
+    /// Add a string of text for rendering.
+    /// (x, y) is the top left corner of where the text will be placed.
+    pub fn add_string_to_batch(
+        &mut self,
+        s: &str,
+        queue: &Queue,
+        x: f32,
+        y: f32,
+        text_color: [f32; 4],
+    ) {
+        // calculate bottom, fudge it a bit because off center things look more centered
+        let mut y = (y - (self.font_size as f32 * 0.8)).floor();
+
+        // calculate left
+        let mut x = x.floor();
 
         // text is placed using x,y, the bottom left corner of the start of the text.
         for c in s.chars() {
