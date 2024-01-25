@@ -180,14 +180,14 @@ impl Container for Vbox {
     }
 }
 
-pub struct SceneRoot {
+pub struct SceneRoot<'window> {
     root: Box<dyn Container>,
 
-    state: State,
+    state: State<'window>,
     last_frame_time: Duration,
 }
 
-impl SceneRoot {
+impl<'window> SceneRoot<'window> {
     pub async fn run() {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -206,7 +206,7 @@ impl SceneRoot {
                 text_color: [1.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
             }])),
-            state: State::new(window).await,
+            state: State::new(&window).await,
             last_frame_time: Duration::from_nanos(0),
         };
 

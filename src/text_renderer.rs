@@ -130,8 +130,8 @@ impl TextRenderer {
         for x in 0..width {
             for y in 0..height {
                 img.put_pixel(
-                    x as u32 + 1,
-                    y as u32 + 1,
+                    x + 1,
+                    y + 1,
                     Rgba([
                         255,
                         255,

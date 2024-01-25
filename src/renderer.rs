@@ -4,21 +4,21 @@ use crate::textured_quad::TexturedQuadRenderer;
 use std::iter;
 use winit::window::Window;
 
-pub struct State {
-    surface: wgpu::Surface,
+pub struct State<'window> {
+    surface: wgpu::Surface<'window>,
     device: wgpu::Device,
     pub queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    pub window: Window,
+    pub window: &'window Window,
 
     pub quad_renderer: QuadRenderer,
     pub textured_quad_renderer: TexturedQuadRenderer,
     pub text_renderer: TextRenderer,
 }
 
-impl State {
-    pub async fn new(window: Window) -> Self {
+impl<'window> State<'window> {
+    pub async fn new(window: &'window Window) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -32,7 +32,7 @@ impl State {
         //
         // The surface needs to live as long as the window that created it.
         // State owns the window so this should be safe.
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -46,8 +46,8 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
                 },
                 None,
             )
@@ -70,6 +70,7 @@ impl State {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
 
         surface.configure(&device, &config);
